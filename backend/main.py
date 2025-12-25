@@ -1,7 +1,7 @@
 # main.py - FastAPI сервер для онлайн шахмат
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 import json
@@ -23,10 +23,14 @@ from schemas import (
 )
 from pydantic import ValidationError
 from database import db
+import aiosqlite
 
 logger = setup_logger()
 
 app = FastAPI(title="Chess Online")
+
+# Флаг готовности приложения
+_app_ready = False
 
 # Middleware для отключения кэширования статических файлов v2.7
 class NoCacheMiddleware(BaseHTTPMiddleware):
@@ -42,11 +46,60 @@ class NoCacheMiddleware(BaseHTTPMiddleware):
 app.add_middleware(NoCacheMiddleware)
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint для проверки работоспособности приложения."""
+    global _app_ready
+
+    # Всегда возвращаем 200 OK для Timeweb Cloud
+    # Платформа будет проверять доступность endpoint, а не статус код
+    if not _app_ready:
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "starting",
+                "ready": False,
+                "message": "Application is still initializing"
+            }
+        )
+
+    # Проверяем доступность базы данных
+    try:
+        async with aiosqlite.connect(db.db_path) as conn:
+            await conn.execute("SELECT 1")
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "ok",
+                "ready": True,
+                "database": "connected"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        # Даже при ошибке БД возвращаем 200, но указываем статус
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "status": "error",
+                "ready": False,
+                "message": str(e)
+            }
+        )
+
+
+
 @app.on_event("startup")
 async def startup_event():
     """Инициализация базы данных при запуске приложения."""
-    await db.initialize()
-    logger.info("Приложение запущено, база данных инициализирована")
+    global _app_ready
+    try:
+        await db.initialize()
+        _app_ready = True
+        logger.info("Приложение запущено, база данных инициализирована")
+    except Exception as e:
+        logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
+        _app_ready = False
 
 # Хранилище активных игр и соединений
 games: Dict[str, ChessGame] = {}
