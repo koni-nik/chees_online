@@ -44,3 +44,4 @@ WEBSOCKET_TIMEOUT = 300.0  # 5 минут неактивности
 MATCHMAKING_TIMEOUT = 60.0  # 1 минута ожидания соперника
 
 
+

@@ -28,3 +28,4 @@ class InvalidPieceException(ChessException):
     pass
 
 
+
