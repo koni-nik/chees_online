@@ -23,6 +23,9 @@ COPY frontend-v2.7/ ./frontend-v2.7/
 
 WORKDIR /app/backend
 
+# Добавляем /app в PYTHONPATH для импорта модулей из shared
+ENV PYTHONPATH=/app
+
 EXPOSE 8000
 
 # Добавляем healthcheck для проверки работоспособности

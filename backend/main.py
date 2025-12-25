@@ -62,11 +62,15 @@ async def health_check():
 async def startup_event():
     """Инициализация базы данных при запуске приложения."""
     global _app_ready
-    logger.info("Приложение запускается...")
-    # Запускаем инициализацию в фоне, чтобы не блокировать запуск приложения
-    import asyncio
-    asyncio.create_task(initialize_db_background())
-    logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
+    try:
+        logger.info("Приложение запускается...")
+        # Запускаем инициализацию в фоне, чтобы не блокировать запуск приложения
+        import asyncio
+        asyncio.create_task(initialize_db_background())
+        logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
+    except Exception as e:
+        logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
+        # Не блокируем запуск даже при ошибке
 
 async def initialize_db_background():
     """Инициализация БД в фоновом режиме."""
@@ -184,43 +188,43 @@ def rebuild_custom_moves(room):
 
 @app.get("/")
 async def root():
-    return FileResponse("../frontend/index.html")
+    return FileResponse("/app/frontend/index.html")
 
 
 @app.get("/frontend")
 @app.get("/frontend/")
 async def frontend():
     """Маршрут для доступа к фронтенду через /frontend/"""
-    return FileResponse("../frontend/index.html")
+    return FileResponse("/app/frontend/index.html")
 
 
 @app.get("/v2.5")
 async def v25_root():
-    return FileResponse("../frontend-v2.5/index.html")
+    return FileResponse("/app/frontend-v2.5/index.html")
 
 
 @app.get("/v2.6")
 async def v26_root():
-    return FileResponse("../frontend-v2.6/index.html")
+    return FileResponse("/app/frontend-v2.6/index.html")
 
 
 @app.get("/v2.7")
 async def v27_root():
-    response = FileResponse("../frontend-v2.7/index.html")
+    response = FileResponse("/app/frontend-v2.7/index.html")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
 
 
-app.mount("/v2.5/static", StaticFiles(directory="../frontend-v2.5"), name="static_v25")
-app.mount("/v2.6/static", StaticFiles(directory="../frontend-v2.6"), name="static_v26")
-app.mount("/v2.7/static", StaticFiles(directory="../frontend-v2.7/static"), name="static_v27")
+app.mount("/v2.5/static", StaticFiles(directory="/app/frontend-v2.5"), name="static_v25")
+app.mount("/v2.6/static", StaticFiles(directory="/app/frontend-v2.6"), name="static_v26")
+app.mount("/v2.7/static", StaticFiles(directory="/app/frontend-v2.7/static"), name="static_v27")
 
 # Маршрут для game.js в v2.7 (находится в корне директории)
 @app.get("/v2.7/game.js")
 async def v27_game_js():
-    response = FileResponse("../frontend-v2.7/game.js", media_type="application/javascript")
+    response = FileResponse("/app/frontend-v2.7/game.js", media_type="application/javascript")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -912,12 +916,12 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
 
 
 # Монтируем статические файлы
-app.mount("/static", StaticFiles(directory="../frontend"), name="static")
+app.mount("/static", StaticFiles(directory="/app/frontend"), name="static")
 
 # Для совместимости со старыми ссылками /v2 -> /v2.5
 @app.get("/v2")
 async def v2_redirect():
-    return FileResponse("../frontend-v2.5/index.html")
+    return FileResponse("/app/frontend-v2.5/index.html")
 
 
 if __name__ == "__main__":
