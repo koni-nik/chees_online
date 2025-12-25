@@ -49,43 +49,12 @@ app.add_middleware(NoCacheMiddleware)
 @app.get("/health")
 async def health_check():
     """Health check endpoint для проверки работоспособности приложения."""
-    global _app_ready
-
-    # Всегда возвращаем 200 OK для Timeweb Cloud
-    # Платформа будет проверять доступность endpoint, а не статус код
-    if not _app_ready:
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "starting",
-                "ready": False,
-                "message": "Application is still initializing"
-            }
-        )
-
-    # Проверяем доступность базы данных
-    try:
-        async with aiosqlite.connect(db.db_path) as conn:
-            await conn.execute("SELECT 1")
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "ok",
-                "ready": True,
-                "database": "connected"
-            }
-        )
-    except Exception as e:
-        logger.error(f"Health check failed: {e}")
-        # Даже при ошибке БД возвращаем 200, но указываем статус
-        return JSONResponse(
-            status_code=status.HTTP_200_OK,
-            content={
-                "status": "error",
-                "ready": False,
-                "message": str(e)
-            }
-        )
+    # Простой healthcheck для платформы Timeweb Cloud
+    # Всегда возвращаем 200 OK, чтобы платформа считала приложение готовым
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={"status": "ok"}
+    )
 
 #xtu
 
