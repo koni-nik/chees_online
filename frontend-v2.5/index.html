@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Шахматы 2.5 Онлайн</title>
+    <link rel="stylesheet" href="/v2.5/static/style.css">
+</head>
+<body>
+    <!-- Главное меню -->
+    <div id="main-menu" class="menu-screen">
+        <div class="menu-bg"></div>
+        <div class="menu-pieces"></div>
+        <div class="menu-content">
+            <h1 class="menu-title">Шахматы</h1>
+            <p class="menu-subtitle">Версия 2.5 Онлайн</p>
+            
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-online">Играть онлайн 1 на 1</button>
+                <button class="menu-btn" id="btn-local">Играть локально</button>
+                <button class="menu-btn" id="btn-stats">Статистика</button>
+                <button class="menu-btn disabled">Обучение - в разработке</button>
+            </div>
+            
+            <p class="menu-hint">D - панель разработчика</p>
+            
+        </div>
+    </div>
+    
+    <!-- Экран подключения к комнате -->
+    <div id="room-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Онлайн игра</h2>
+            
+            <div class="room-form">
+                <label>ID комнаты:</label>
+                <input type="text" id="room-input" placeholder="Введите или оставьте пустым">
+                <button class="menu-btn" id="btn-join">Войти в комнату</button>
+                <button class="menu-btn secondary" id="btn-create">Создать новую комнату</button>
+            </div>
+            
+            <button class="back-btn" id="btn-back-room">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Экран статистики -->
+    <div id="stats-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Статистика</h2>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <span class="stat-label">Всего партий:</span>
+                    <span class="stat-value" id="stat-total">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед белых:</span>
+                    <span class="stat-value" id="stat-white">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед чёрных:</span>
+                    <span class="stat-value" id="stat-black">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Ничьих:</span>
+                    <span class="stat-value" id="stat-draws">0</span>
+                </div>
+            </div>
+            
+            <div class="stats-bar">
+                <div class="bar-white" id="bar-white"></div>
+                <div class="bar-black" id="bar-black"></div>
+            </div>
+            <p class="stats-percent" id="stats-percent"></p>
+            
+            <button class="back-btn" id="btn-back-stats">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Игровой экран -->
+    <div id="game-screen" class="hidden">
+        <div class="container">
+            <header>
+                <h1>♔ Шахматы 2.5 Онлайн</h1>
+            </header>
+            
+            <div class="game-wrapper">
+                <div class="board-container">
+                    <div class="board-coords files">
+                        <span>a</span><span>b</span><span>c</span><span>d</span><span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                    <div class="board-coords ranks">
+                        <span>8</span><span>7</span><span>6</span><span>5</span><span>4</span><span>3</span><span>2</span><span>1</span>
+                    </div>
+                    <canvas id="board" width="480" height="480"></canvas>
+                </div>
+                
+                <aside class="sidebar">
+                    <div class="player-info opponent">
+                        <div class="player-avatar">♚</div>
+                        <div class="player-details">
+                            <span class="player-name">Противник</span>
+                            <span class="player-color">Чёрные</span>
+                        </div>
+                        <div class="player-timer" id="timer-black">10:00</div>
+                    </div>
+                    
+                    <div class="game-status">
+                        <div id="status">Ожидание игрока...</div>
+                        <div id="turn-indicator" class="turn white">Ход белых</div>
+                    </div>
+                    
+                    <div class="connection-status">
+                        <div class="connection-dot" id="connection-dot"></div>
+                        <span id="connection-text">Подключено</span>
+                    </div>
+                    
+                    <div class="player-info self">
+                        <div class="player-avatar">♔</div>
+                        <div class="player-details">
+                            <span class="player-name">Вы</span>
+                            <span class="player-color" id="my-color">-</span>
+                        </div>
+                        <div class="player-timer" id="timer-white">10:00</div>
+                    </div>
+                    
+                    <!-- История ходов -->
+                    <div class="move-history">
+                        <div class="move-history-title">История ходов</div>
+                        <div class="move-history-list" id="move-history-list"></div>
+                    </div>
+                    
+                    <div class="controls">
+                        <button id="offer-draw" class="btn btn-secondary">Предложить ничью</button>
+                        <button id="resign" class="btn btn-danger">Сдаться</button>
+                        <button id="btn-to-menu" class="btn btn-secondary">В меню</button>
+                    </div>
+                    
+                    <div class="room-info-display">
+                        <label>Комната:</label>
+                        <div class="room-id-row">
+                            <span id="current-room">-</span>
+                            <button class="copy-btn" id="copy-room-btn">Копировать</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Чат -->
+                    <div class="chat-container" id="chat-container">
+                        <div class="chat-header" id="chat-toggle">
+                            <span>Чат</span>
+                            <span class="chat-toggle">▼</span>
+                        </div>
+                        <div class="chat-body" id="chat-body">
+                            <div class="chat-messages" id="chat-messages"></div>
+                            <div class="chat-input-row">
+                                <input type="text" class="chat-input" id="chat-input" placeholder="Сообщение...">
+                                <button class="chat-send" id="chat-send">→</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="hints">
+                        D - панель разработчика<br>
+                        ЛКМ - ход, ПКМ - атака (Move Board)
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Панель разработчика -->
+    <div id="dev-panel" class="dev-panel">
+        <div class="dev-panel-header">
+            <h3>Dev Panel</h3>
+            <button class="dev-panel-close" id="dev-close">×</button>
+        </div>
+        <div class="dev-panel-content">
+            <div class="dev-section">
+                <h4>Timers</h4>
+                <div class="dev-row">
+                    <label>White (min):</label>
+                    <input type="number" id="white-time" value="10" min="1" max="60">
+                </div>
+                <div class="dev-row">
+                    <label>Black (min):</label>
+                    <input type="number" id="black-time" value="10" min="1" max="60">
+                </div>
+                <button class="dev-btn dev-btn-apply" id="apply-time">Apply</button>
+            </div>
+            
+            <div class="dev-section">
+                <h4>Selected Piece</h4>
+                <div id="selected-piece-info" class="dev-status">None</div>
+                <div class="dev-row" style="margin-top: 8px;">
+                    <button class="dev-btn dev-btn-reset" id="reset-moves">Reset</button>
+                    <button class="dev-btn dev-btn-save" id="deselect-btn">Deselect</button>
+                </div>
+            </div>
+            
+            <div class="dev-section">
+                <h4>Ability Cards</h4>
+                <div class="dev-row">
+                    <button class="dev-btn dev-btn-apply" id="new-card-btn">New Card</button>
+                    <button class="dev-btn dev-btn-save" id="open-board-btn">Move Board</button>
+                </div>
+                <div id="card-list" class="card-list"></div>
+            </div>
+            
+            <div class="dev-section">
+                <div class="dev-row">
+                    <button class="dev-btn dev-btn-save" id="save-all-btn">Save All</button>
+                    <button class="dev-btn dev-btn-reset" id="close-panel-btn">Close</button>
+                </div>
+            </div>
+            
+            <div class="dev-status" id="dev-status">Ready</div>
+        </div>
+    </div>
+    
+    <!-- Move Board -->
+    <div id="move-board" class="move-board hidden">
+        <div class="move-board-header">
+            <button class="mb-btn" id="mb-prev">&lt;</button>
+            <button class="mb-btn" id="mb-next">&gt;</button>
+            <span id="mb-piece-name">PAWN</span>
+            <button class="mb-color-btn" id="mb-color">white</button>
+            <button class="mb-close" id="mb-close">×</button>
+        </div>
+        <canvas id="move-board-canvas" width="320" height="320"></canvas>
+        <div class="move-board-footer">
+            <span>LMB — move, RMB — attack</span>
+            <span id="mb-stats">Added: 0 moves, 0 attacks</span>
+        </div>
+    </div>
+    
+    <!-- Форма карточки -->
+    <div id="card-form" class="card-form hidden">
+        <div class="card-form-content">
+            <h4>New Card</h4>
+            <input type="text" id="card-name-input" placeholder="Card name">
+            <div class="card-form-info">
+                <span>Color: <strong id="card-color-display">white</strong></span>
+                <span>Moves: <strong id="card-moves-count">0</strong></span>
+                <span>Attacks: <strong id="card-attacks-count">0</strong></span>
+            </div>
+            <div class="card-form-hint">Enter=Save | Tab=Color | Esc=Cancel</div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно конца игры -->
+    <div id="game-over-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="game-over-title">Игра окончена</h2>
+            <p id="game-over-message"></p>
+            <button id="play-again" class="btn btn-primary">Играть снова</button>
+            <button id="to-menu-modal" class="btn btn-secondary">В меню</button>
+        </div>
+    </div>
+    
+    <!-- Предложение ничьей -->
+    <div id="draw-offer-modal" class="draw-offer-modal hidden">
+        <h3>Предложение ничьей</h3>
+        <p>Противник предлагает ничью</p>
+        <button id="accept-draw" class="btn btn-success">Принять</button>
+        <button id="decline-draw" class="btn btn-danger">Отклонить</button>
+    </div>
+    
+    <!-- Переключатель версий и тем -->
+    <div class="switchers-panel">
+        <div class="switcher-group">
+            <span class="switcher-label">Версия:</span>
+            <a href="/">2.4</a>
+            <a href="/v2.5" class="active">2.5</a>
+            <a href="/v2.6">2.6</a>
+            <a href="/v2.7">2.7</a>
+        </div>
+        <div class="switcher-group">
+            <span class="switcher-label">Тема:</span>
+            <button class="theme-btn" data-theme="neon">Neon</button>
+            <button class="theme-btn" data-theme="classic">Classic</button>
+        </div>
+    </div>
+    
+    <script src="/v2.5/static/game.js"></script>
+</body>
+</html>
+
+
+

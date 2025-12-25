@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+
+# База данных
+*.db
+*.sqlite
+*.sqlite3
+
+# Логи
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Бэкапы
+0 Бэкап/
+*Бэкап*/
+
+# Временные файлы
+*.tmp
+*.bak
+*.swp
+
+# Windows
+*.bat
+desktop.ini
+
+

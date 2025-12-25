@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Шахматы 2.4 Онлайн</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Главное меню -->
+    <div id="main-menu" class="menu-screen">
+        <div class="menu-bg"></div>
+        <div class="menu-pieces"></div>
+        <div class="menu-content">
+            <h1 class="menu-title">Шахматы</h1>
+            <p class="menu-subtitle">Версия 2.4 Онлайн</p>
+            
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-online">Играть онлайн 1 на 1</button>
+                <button class="menu-btn" id="btn-local">Играть локально</button>
+                <button class="menu-btn" id="btn-stats">Статистика</button>
+                <button class="menu-btn disabled">Обучение - в разработке</button>
+            </div>
+            
+            <p class="menu-hint">D - панель разработчика</p>
+            
+            <div class="version-switcher">
+                <span>Версия:</span>
+                <a href="/" class="version-link active">2.4</a>
+                <a href="/v2.5" class="version-link">2.5</a>
+                <a href="/v2.6" class="version-link">2.6</a>
+                <a href="/v2.7" class="version-link">2.7</a>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Экран подключения к комнате -->
+    <div id="room-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Онлайн игра</h2>
+            
+            <div class="room-form">
+                <label>ID комнаты:</label>
+                <input type="text" id="room-input" placeholder="Введите или оставьте пустым">
+                <button class="menu-btn" id="btn-join">Войти в комнату</button>
+                <button class="menu-btn secondary" id="btn-create">Создать новую комнату</button>
+            </div>
+            
+            <button class="back-btn" id="btn-back-room">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Экран статистики -->
+    <div id="stats-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Статистика</h2>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <span class="stat-label">Всего партий:</span>
+                    <span class="stat-value" id="stat-total">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед белых:</span>
+                    <span class="stat-value" id="stat-white">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед чёрных:</span>
+                    <span class="stat-value" id="stat-black">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Ничьих:</span>
+                    <span class="stat-value" id="stat-draws">0</span>
+                </div>
+            </div>
+            
+            <div class="stats-bar">
+                <div class="bar-white" id="bar-white"></div>
+                <div class="bar-black" id="bar-black"></div>
+            </div>
+            <p class="stats-percent" id="stats-percent"></p>
+            
+            <button class="back-btn" id="btn-back-stats">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Игровой экран -->
+    <div id="game-screen" class="hidden">
+        <div class="container">
+            <header>
+                <h1>♔ Шахматы 2.4 Онлайн</h1>
+            </header>
+            
+            <div class="game-wrapper">
+                <div class="board-container">
+                    <canvas id="board" width="480" height="480"></canvas>
+                </div>
+                
+                <aside class="sidebar">
+                    <div class="player-info opponent">
+                        <div class="player-avatar">♚</div>
+                        <div class="player-details">
+                            <span class="player-name">Противник</span>
+                            <span class="player-color">Чёрные</span>
+                        </div>
+                        <div class="player-timer" id="timer-black">10:00</div>
+                    </div>
+                    
+                    <div class="game-status">
+                        <div id="status">Ожидание игрока...</div>
+                        <div id="turn-indicator" class="turn white">Ход белых</div>
+                    </div>
+                    
+                    <div class="player-info self">
+                        <div class="player-avatar">♔</div>
+                        <div class="player-details">
+                            <span class="player-name">Вы</span>
+                            <span class="player-color" id="my-color">-</span>
+                        </div>
+                        <div class="player-timer" id="timer-white">10:00</div>
+                    </div>
+                    
+                    <div class="controls">
+                        <button id="resign" class="btn btn-danger">Сдаться</button>
+                        <button id="btn-to-menu" class="btn btn-secondary">В меню</button>
+                    </div>
+                    
+                    <div class="room-info-display">
+                        <label>Комната:</label>
+                        <span id="current-room">-</span>
+                    </div>
+                    
+                    <div class="hints">
+                        D - панель разработчика<br>
+                        ЛКМ - ход, ПКМ - атака (в Move Board)
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Панель разработчика -->
+    <div id="dev-panel" class="dev-panel">
+        <div class="dev-panel-header">
+            <h3>Developer Panel</h3>
+            <button class="dev-panel-close" id="dev-close">×</button>
+        </div>
+        <div class="dev-panel-content">
+            <div class="dev-section">
+                <h4>Таймеры</h4>
+                <div class="dev-row">
+                    <label>Белые (мин):</label>
+                    <input type="number" id="white-time" value="10" min="1" max="60">
+                </div>
+                <div class="dev-row">
+                    <label>Чёрные (мин):</label>
+                    <input type="number" id="black-time" value="10" min="1" max="60">
+                </div>
+                <button class="dev-btn dev-btn-apply" id="apply-time">Apply Time</button>
+            </div>
+            
+            <div class="dev-section">
+                <h4>Выбранная фигура</h4>
+                <div id="selected-piece-info" class="dev-status">Не выбрана</div>
+                <div class="dev-row" style="margin-top: 8px;">
+                    <button class="dev-btn dev-btn-reset" id="reset-moves">Reset Moves</button>
+                    <button class="dev-btn dev-btn-save" id="deselect-btn">Deselect</button>
+                </div>
+            </div>
+            
+            <div class="dev-section">
+                <h4>Ability Cards</h4>
+                <div class="dev-row">
+                    <button class="dev-btn dev-btn-apply" id="new-card-btn">New Card</button>
+                    <button class="dev-btn dev-btn-save" id="open-board-btn">Move Board</button>
+                </div>
+                <div id="card-list" class="card-list"></div>
+            </div>
+            
+            <div class="dev-section">
+                <div class="dev-row">
+                    <button class="dev-btn dev-btn-save" id="save-all-btn">Save All</button>
+                    <button class="dev-btn dev-btn-reset" id="close-panel-btn">Close</button>
+                </div>
+            </div>
+            
+            <div class="dev-status" id="dev-status">Готово</div>
+        </div>
+    </div>
+    
+    <!-- Move Board (доска для создания кастомных ходов) -->
+    <div id="move-board" class="move-board hidden">
+        <div class="move-board-header">
+            <button class="mb-btn" id="mb-prev">&lt;</button>
+            <button class="mb-btn" id="mb-next">&gt;</button>
+            <span id="mb-piece-name">PAWN</span>
+            <button class="mb-color-btn" id="mb-color">white</button>
+            <button class="mb-close" id="mb-close">×</button>
+        </div>
+        <canvas id="move-board-canvas" width="320" height="320"></canvas>
+        <div class="move-board-footer">
+            <span>ЛКМ - ход, ПКМ - атака</span>
+            <span id="mb-stats">Добавлено: 0 ходов, 0 атак</span>
+        </div>
+    </div>
+    
+    <!-- Форма создания карточки -->
+    <div id="card-form" class="card-form hidden">
+        <div class="card-form-content">
+            <h4>Новая карточка</h4>
+            <input type="text" id="card-name-input" placeholder="Название карточки">
+            <div class="card-form-info">
+                <span>Цвет: <strong id="card-color-display">white</strong></span>
+                <span>Ходов: <strong id="card-moves-count">0</strong></span>
+                <span>Атак: <strong id="card-attacks-count">0</strong></span>
+            </div>
+            <div class="card-form-hint">Enter=Сохранить | Tab=Цвет | Esc=Отмена</div>
+        </div>
+    </div>
+    
+    <!-- Модальное окно конца игры -->
+    <div id="game-over-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2 id="game-over-title">Игра окончена</h2>
+            <p id="game-over-message"></p>
+            <button id="play-again" class="btn btn-primary">Играть снова</button>
+            <button id="to-menu-modal" class="btn btn-secondary">В меню</button>
+        </div>
+    </div>
+    
+    <script src="/static/game.js"></script>
+</body>
+</html>
