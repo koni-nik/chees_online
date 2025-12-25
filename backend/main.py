@@ -47,14 +47,13 @@ app.add_middleware(NoCacheMiddleware)
 
 
 @app.get("/health")
+@app.get("/ping")
 async def health_check():
     """Health check endpoint для проверки работоспособности приложения."""
     # Простой healthcheck для платформы Timeweb Cloud
     # Всегда возвращаем 200 OK, чтобы платформа считала приложение готовым
-    return JSONResponse(
-        status_code=status.HTTP_200_OK,
-        content={"status": "ok"}
-    )
+    # Используем простой Response для максимальной скорости
+    return Response(status_code=200, content="ok")
 
 #xtu
 
