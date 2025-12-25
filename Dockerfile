@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 WORKDIR /app
 
@@ -29,9 +29,10 @@ ENV PYTHONPATH=/app
 EXPOSE 8000
 
 # Добавляем healthcheck для проверки работоспособности
-# Используем Python для проверки, так как он уже установлен
-HEALTHCHECK --interval=5s --timeout=3s --start-period=90s --retries=5 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()" || exit 1
+# Используем curl для проверки (уже установлен)
+# Увеличиваем start-period до 120 секунд для полной инициализации
+HEALTHCHECK --interval=10s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "5", "--workers", "1", "--log-level", "info"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "5", "--log-level", "info", "--access-log"]
 

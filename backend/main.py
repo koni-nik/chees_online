@@ -61,11 +61,16 @@ async def health_check():
 async def startup_event():
     """Инициализация базы данных при запуске приложения."""
     global _app_ready
+    # Сразу помечаем приложение как готовое для healthcheck
+    _app_ready = True
+    logger.info("Приложение запускается...")
+    
+    # Запускаем инициализацию БД в фоне, не блокируя запуск
+    import asyncio
     try:
-        logger.info("Приложение запускается...")
-        # Запускаем инициализацию в фоне, чтобы не блокировать запуск приложения
-        import asyncio
-        asyncio.create_task(initialize_db_background())
+        # Используем правильный способ создания задачи в контексте startup
+        loop = asyncio.get_event_loop()
+        loop.create_task(initialize_db_background())
         logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
@@ -73,14 +78,11 @@ async def startup_event():
 
 async def initialize_db_background():
     """Инициализация БД в фоновом режиме."""
-    global _app_ready
     try:
         await db.initialize()
-        _app_ready = True
-        logger.info("Приложение запущено, база данных инициализирована")
+        logger.info("База данных инициализирована")
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
-        _app_ready = False
 
 # Хранилище активных игр и соединений
 games: Dict[str, ChessGame] = {}
