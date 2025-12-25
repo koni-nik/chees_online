@@ -62,6 +62,15 @@ async def health_check():
 async def startup_event():
     """Инициализация базы данных при запуске приложения."""
     global _app_ready
+    logger.info("Приложение запускается...")
+    # Запускаем инициализацию в фоне, чтобы не блокировать запуск приложения
+    import asyncio
+    asyncio.create_task(initialize_db_background())
+    logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
+
+async def initialize_db_background():
+    """Инициализация БД в фоновом режиме."""
+    global _app_ready
     try:
         await db.initialize()
         _app_ready = True
