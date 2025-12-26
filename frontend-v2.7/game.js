@@ -1799,13 +1799,18 @@ class ChessGame {
                 this.myColor = data.color;
                 this.board = data.board;
                 this.currentPlayer = data.current_player;
+                console.log(`[DEBUG] Init: myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
                 this.customMoves = data.custom_moves || { white: {}, black: {} };
                 this.abilityCards = data.ability_cards || { white: {}, black: {} };
                 this.timers = data.timers || { white: 600, black: 600 };
                 this.lastMove = null;
+                this.selectedPiece = null;
+                this.validMoves = [];
+                this.validAttacks = [];
                 this.startTimer();
                 document.getElementById('my-color').textContent = data.color === 'white' ? 'Белые' : data.color === 'black' ? 'Чёрные' : 'Наблюдатель';
                 this.updateStatus(data.players_count);
+                this.updateTurnIndicator();
                 this.updateCardList();
                 this.draw();
                 break;
@@ -1846,6 +1851,7 @@ class ChessGame {
                 
                 this.board = data.board;
                 this.currentPlayer = data.current_player;
+                console.log(`[DEBUG] Move: currentPlayer updated to ${this.currentPlayer}, myColor=${this.myColor}`);
                 if (data.timers) this.timers = data.timers;
                 this.lastMove = { from: data.from, to: data.to };
                 this.selectedPiece = null;
@@ -2557,7 +2563,14 @@ class ChessGame {
     }
     
     handleOnlineClick(x, y) {
-        if (this.myColor !== this.currentPlayer) return;
+        // Проверяем, что это онлайн игра и есть WebSocket соединение
+        if (this.isLocalGame || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        
+        // Проверяем, что это ход игрока
+        if (this.myColor === null || this.myColor !== this.currentPlayer) {
+            console.log(`[DEBUG] Move blocked: myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
+            return;
+        }
         const clickedPiece = this.board[x][y];
         
         if (this.selectedPiece) {
