@@ -869,6 +869,7 @@ class ChessGame {
     
     async joinTournamentRoom(roomId) {
         try {
+            console.log(`[DEBUG] Tournament: Joining room ${roomId}, playerId=${this.playerId}`);
             const response = await fetch(`/api/tournament-rooms/${roomId}/join`, {
                 method: 'POST',
                 headers: {
@@ -885,16 +886,19 @@ class ChessGame {
             }
             
             const result = await response.json();
+            console.log(`[DEBUG] Tournament: Join response:`, result);
             
             if (result.success) {
                 // Переходим в игровую комнату
                 // Используем roomId турнирной комнаты как обычную игровую комнату
+                console.log(`[DEBUG] Tournament: Calling joinRoom(${roomId})`);
                 this.joinRoom(roomId);
             } else {
+                console.log(`[DEBUG] Tournament: Join failed:`, result);
                 alert('Не удалось присоединиться к комнате');
             }
         } catch (error) {
-            console.error('Ошибка присоединения к турнирной комнате:', error);
+            console.error('[DEBUG] Tournament: Error joining room:', error);
             alert('Ошибка присоединения: ' + error.message);
         }
     }
@@ -1022,10 +1026,23 @@ class ChessGame {
         const message = input.value.trim();
         if (!message) return;
         
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'chat', message }));
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Chat: Local game, skipping WebSocket');
+            return;
         }
         
+        if (!this.ws) {
+            console.log('[DEBUG] Chat: WebSocket not initialized');
+            return;
+        }
+        
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Chat: WebSocket not open, readyState=${this.ws.readyState}`);
+            return;
+        }
+        
+        console.log('[DEBUG] Chat: Sending message via WebSocket');
+        this.ws.send(JSON.stringify({ type: 'chat', message }));
         this.addChatMessage('You', message);
         input.value = '';
     }
@@ -1052,11 +1069,24 @@ class ChessGame {
     
     // ============ НИЧЬЯ ============
     offerDraw() {
-        if (this.isLocalGame) return;
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'offer_draw' }));
-            this.addChatMessage(null, 'Вы предложили ничью', true);
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Draw: Local game, skipping');
+            return;
         }
+        
+        if (!this.ws) {
+            console.log('[DEBUG] Draw: WebSocket not initialized');
+            return;
+        }
+        
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Draw: WebSocket not open, readyState=${this.ws.readyState}`);
+            return;
+        }
+        
+        console.log('[DEBUG] Draw: Sending offer_draw via WebSocket');
+        this.ws.send(JSON.stringify({ type: 'offer_draw' }));
+        this.addChatMessage(null, 'Вы предложили ничью', true);
     }
     
     respondToDraw(accept) {
@@ -1080,7 +1110,18 @@ class ChessGame {
             // Восстанавливаем доску из истории (упрощенная версия)
             // Для полной реализации нужно хранить состояние доски
             alert('Отмена хода в локальной игре требует восстановления состояния доски. Функция в разработке.');
-        } else if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        } else {
+            if (!this.ws) {
+                console.log('[DEBUG] Undo: WebSocket not initialized');
+                return;
+            }
+            
+            if (this.ws.readyState !== WebSocket.OPEN) {
+                console.log(`[DEBUG] Undo: WebSocket not open, readyState=${this.ws.readyState}`);
+                return;
+            }
+            
+            console.log('[DEBUG] Undo: Sending request_undo via WebSocket');
             // В онлайн игре отправляем запрос на отмену
             this.ws.send(JSON.stringify({ type: 'request_undo' }));
         }
@@ -1752,6 +1793,7 @@ class ChessGame {
         this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/${this.roomId}/${this.playerId}`);
         
         this.ws.onopen = () => {
+            console.log(`[DEBUG] WebSocket: Connected to room ${this.roomId}, playerId=${this.playerId}`);
             document.getElementById('status').textContent = 'Подключено. Ожидание противника...';
             this.updateConnectionStatus(true);
             this.reconnectAttempts = 0;
@@ -1796,10 +1838,10 @@ class ChessGame {
     handleServerMessage(data) {
         switch (data.type) {
             case 'init':
+                console.log(`[DEBUG] Init: Received init message, color=${data.color}, currentPlayer=${data.current_player}, playersCount=${data.players_count}`);
                 this.myColor = data.color;
                 this.board = data.board;
                 this.currentPlayer = data.current_player;
-                console.log(`[DEBUG] Init: myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
                 this.customMoves = data.custom_moves || { white: {}, black: {} };
                 this.abilityCards = data.ability_cards || { white: {}, black: {} };
                 this.timers = data.timers || { white: 600, black: 600 };
@@ -1807,6 +1849,7 @@ class ChessGame {
                 this.selectedPiece = null;
                 this.validMoves = [];
                 this.validAttacks = [];
+                console.log(`[DEBUG] Init: State set - myColor=${this.myColor}, currentPlayer=${this.currentPlayer}, ws=${this.ws ? 'exists' : 'null'}, ws.readyState=${this.ws ? this.ws.readyState : 'N/A'}`);
                 this.startTimer();
                 document.getElementById('my-color').textContent = data.color === 'white' ? 'Белые' : data.color === 'black' ? 'Чёрные' : 'Наблюдатель';
                 this.updateStatus(data.players_count);
@@ -2564,13 +2607,28 @@ class ChessGame {
     
     handleOnlineClick(x, y) {
         // Проверяем, что это онлайн игра и есть WebSocket соединение
-        if (this.isLocalGame || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Move: Local game, skipping');
+            return;
+        }
+        
+        if (!this.ws) {
+            console.log('[DEBUG] Move: WebSocket not initialized');
+            return;
+        }
+        
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Move: WebSocket not open, readyState=${this.ws.readyState}`);
+            return;
+        }
         
         // Проверяем, что это ход игрока
         if (this.myColor === null || this.myColor !== this.currentPlayer) {
             console.log(`[DEBUG] Move blocked: myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
             return;
         }
+        
+        console.log(`[DEBUG] Move: Processing click at (${x}, ${y}), myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
         const clickedPiece = this.board[x][y];
         
         if (this.selectedPiece) {

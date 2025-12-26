@@ -198,6 +198,9 @@ class ChessGame {
         this.playerId = this.generateId();
         this.isLocalGame = false;
         
+        // Флаг для отслеживания касания на canvas (для мобильных)
+        this.touchStartedOnCanvas = false;
+        
         // Reconnect (улучшено для v2.7 - экспоненциальная задержка)
         this.reconnectAttempts = 0;
         this.maxReconnectAttempts = 10;
@@ -472,15 +475,24 @@ class ChessGame {
         this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.handleClick(e, true); });
         
         // Touch события для мобильных (с passive: false для preventDefault)
+        // Обрабатываем касание только в touchstart, не в touchend
         this.canvas.addEventListener('touchstart', (e) => {
             e.preventDefault();
+            this.touchStartedOnCanvas = true;
             this.handleTouch(e);
         }, { passive: false });
-        this.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        this.canvas.addEventListener('touchmove', (e) => {
+            // Предотвращаем прокрутку только если касание началось на canvas
+            if (this.touchStartedOnCanvas) {
+                e.preventDefault();
+            }
+        }, { passive: false });
         this.canvas.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            // Обрабатываем касание при завершении (для случаев когда touchstart не сработал)
-            this.handleTouch(e);
+            // Только предотвращаем прокрутку, не обрабатываем ход
+            if (this.touchStartedOnCanvas) {
+                e.preventDefault();
+                this.touchStartedOnCanvas = false;
+            }
         }, { passive: false });
         
         this.initDevPanel();
@@ -1663,12 +1675,10 @@ class ChessGame {
     
     handleTouch(event) {
         event.preventDefault();
-        // Используем touches для touchstart, changedTouches для touchend
+        // Используем touches для touchstart (touchend не должен вызывать handleTouch)
         const touch = event.touches && event.touches.length > 0 
             ? event.touches[0] 
-            : (event.changedTouches && event.changedTouches.length > 0 
-                ? event.changedTouches[0] 
-                : null);
+            : null;
         
         if (!touch) return;
         
