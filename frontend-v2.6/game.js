@@ -472,11 +472,15 @@ class ChessGame {
         this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.handleClick(e, true); });
         
         // Touch события для мобильных (с passive: false для preventDefault)
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e), { passive: false });
+        this.canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            this.handleTouch(e);
+        }, { passive: false });
         this.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
         this.canvas.addEventListener('touchend', (e) => {
             e.preventDefault();
-            // Обработка завершения касания если нужно
+            // Обрабатываем касание при завершении (для случаев когда touchstart не сработал)
+            this.handleTouch(e);
         }, { passive: false });
         
         this.initDevPanel();
@@ -1659,7 +1663,15 @@ class ChessGame {
     
     handleTouch(event) {
         event.preventDefault();
-        const touch = event.touches[0];
+        // Используем touches для touchstart, changedTouches для touchend
+        const touch = event.touches && event.touches.length > 0 
+            ? event.touches[0] 
+            : (event.changedTouches && event.changedTouches.length > 0 
+                ? event.changedTouches[0] 
+                : null);
+        
+        if (!touch) return;
+        
         const rect = this.canvas.getBoundingClientRect();
         const offset = this.coordsOffset;
         // Вычитаем offset из координат клика
