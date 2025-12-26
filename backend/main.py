@@ -30,6 +30,7 @@ from schemas import (
 from pydantic import ValidationError
 from database import db
 import aiosqlite
+import asyncio
 
 logger = setup_logger()
 
@@ -371,7 +372,6 @@ async def startup_event():
     logger.info(f"Зарегистрировано API маршрутов: {len(api_routes)}")
     
     # Запускаем инициализацию БД в фоне, не блокируя запуск
-    import asyncio
     try:
         # Используем правильный способ создания задачи в контексте startup
         loop = asyncio.get_event_loop()
@@ -399,7 +399,8 @@ matchmaking_queue: List[Dict] = []  # [{player_id, websocket, rating, timestamp}
 matchmaking_event = None  # asyncio.Event для уведомлений
 connections: Dict[str, WebSocket] = {}  # player_id -> websocket
 
-# tournament_rooms определен выше, перед API endpoints
+# Хранилище турнирных комнат
+tournament_rooms: Dict[str, Dict] = {}  # room_id -> {id, name, start_time, start_time_utc, players, spectators, created_at, status}
 
 # Рейтинги игроков теперь в rating.py
 
@@ -474,256 +475,6 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
-
-# ============ API для турнирных комнат ============
-
-# Московский часовой пояс
-MOSCOW_TZ = pytz.timezone('Europe/Moscow')
-
-
-async def check_tournament_rooms_start_time():
-    """Периодическая проверка времени старта турнирных комнат."""
-    while True:
-        try:
-            current_time = datetime.now(pytz.UTC)
-            for room_id, room_data in list(tournament_rooms.items()):
-                if room_data["status"] == "waiting":
-                    start_time_utc = room_data["start_time_utc"]
-                    if current_time >= start_time_utc:
-                        # Время старта наступило
-                        room_data["status"] = "started"
-                        # Уведомляем всех участников через WebSocket
-                        notification_room_id = f"tournament_{room_id}"
-                        if notification_room_id in manager.active_connections:
-                            await manager.send_to_room(notification_room_id, {
-                                "type": "tournament_room_started",
-                                "room_id": room_id,
-                                "name": room_data["name"]
-                            })
-                        logger.info(f"Турнирная комната {room_id} ({room_data['name']}) началась")
-        except Exception as e:
-            logger.error(f"Ошибка при проверке времени старта турнирных комнат: {e}", exc_info=True)
-        
-        await asyncio.sleep(10)  # Проверяем каждые 10 секунд
-
-
-@app.post("/api/tournament-rooms")
-async def create_tournament_room(request: CreateTournamentRoomRequest):
-    """Создание турнирной комнаты."""
-    try:
-        # Парсим время старта (ожидаем ISO формат без timezone - интерпретируем как московское время)
-        try:
-            # Пробуем распарсить как ISO
-            if 'T' in request.start_time:
-                # Формат: YYYY-MM-DDTHH:MM:SS или YYYY-MM-DDTHH:MM
-                parts = request.start_time.split('T')
-                date_part = parts[0]
-                time_part = parts[1] if len(parts) > 1 else '00:00:00'
-                # Добавляем секунды если их нет
-                if len(time_part.split(':')) == 2:
-                    time_part += ':00'
-                datetime_str = f"{date_part}T{time_part}"
-                start_time_naive = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S")
-            else:
-                # Формат: YYYY-MM-DD HH:MM:SS
-                start_time_naive = datetime.strptime(request.start_time, "%Y-%m-%d %H:%M:%S")
-        except Exception as e:
-            logger.error(f"Ошибка парсинга времени: {e}, входные данные: {request.start_time}")
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Неверный формат времени. Используйте формат YYYY-MM-DDTHH:MM:SS (московское время)"}
-            )
-        
-        # Интерпретируем как московское время
-        start_time_moscow = MOSCOW_TZ.localize(start_time_naive)
-        
-        # Конвертируем в UTC для внутреннего хранения
-        start_time_utc = start_time_moscow.astimezone(pytz.UTC)
-        
-        # Проверяем, что время не в прошлом
-        current_time_utc = datetime.now(pytz.UTC)
-        if start_time_utc < current_time_utc:
-            return JSONResponse(
-                status_code=400,
-                content={"error": "Время старта не может быть в прошлом"}
-            )
-        
-        # Создаём комнату
-        room_id = str(uuid.uuid4())[:8]
-        tournament_rooms[room_id] = {
-            "id": room_id,
-            "name": request.name,
-            "start_time": start_time_moscow.isoformat(),  # Сохраняем московское время для отображения
-            "start_time_utc": start_time_utc,  # UTC для внутренних проверок
-            "players": [],
-            "spectators": [],
-            "created_at": time.time(),
-            "status": "waiting"
-        }
-        
-        logger.info(f"Создана турнирная комната: {room_id} ({request.name}), старт: {start_time_moscow.isoformat()}")
-        
-        return {
-            "id": room_id,
-            "name": request.name,
-            "start_time": start_time_moscow.isoformat(),
-            "players_count": 0,
-            "spectators_count": 0,
-            "status": "waiting"
-        }
-    except Exception as e:
-        logger.error(f"Ошибка при создании турнирной комнаты: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Внутренняя ошибка сервера"}
-        )
-
-
-@app.get("/api/tournament-rooms")
-async def list_tournament_rooms():
-    """Получение списка всех турнирных комнат."""
-    try:
-        rooms_list = []
-        current_time_utc = datetime.now(pytz.UTC)
-        
-        for room_id, room_data in tournament_rooms.items():
-            # Проверяем статус на основе времени
-            if room_data["status"] == "waiting" and current_time_utc >= room_data["start_time_utc"]:
-                room_data["status"] = "started"
-            
-            rooms_list.append({
-                "id": room_data["id"],
-                "name": room_data["name"],
-                "start_time": room_data["start_time"],
-                "players_count": len(room_data["players"]),
-                "spectators_count": len(room_data["spectators"]),
-                "status": room_data["status"],
-                "max_players": 2
-            })
-        
-        # Сортируем по времени создания (новые первыми)
-        rooms_list.sort(key=lambda x: tournament_rooms[x["id"]]["created_at"], reverse=True)
-        
-        return rooms_list
-    except Exception as e:
-        logger.error(f"Ошибка при получении списка турнирных комнат: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Внутренняя ошибка сервера"}
-        )
-
-
-@app.get("/api/tournament-rooms/{room_id}")
-async def get_tournament_room(room_id: str):
-    """Получение информации о конкретной турнирной комнате."""
-    try:
-        if room_id not in tournament_rooms:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Комната не найдена"}
-            )
-        
-        room_data = tournament_rooms[room_id]
-        current_time_utc = datetime.now(pytz.UTC)
-        
-        # Проверяем статус
-        if room_data["status"] == "waiting" and current_time_utc >= room_data["start_time_utc"]:
-            room_data["status"] = "started"
-        
-        return {
-            "id": room_data["id"],
-            "name": room_data["name"],
-            "start_time": room_data["start_time"],
-            "players": room_data["players"],
-            "spectators": room_data["spectators"],
-            "players_count": len(room_data["players"]),
-            "spectators_count": len(room_data["spectators"]),
-            "status": room_data["status"],
-            "max_players": 2
-        }
-    except Exception as e:
-        logger.error(f"Ошибка при получении информации о комнате {room_id}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Внутренняя ошибка сервера"}
-        )
-
-
-@app.post("/api/tournament-rooms/{room_id}/join")
-async def join_tournament_room(room_id: str, request: JoinTournamentRoomRequest):
-    """Присоединение к турнирной комнате."""
-    try:
-        if room_id not in tournament_rooms:
-            return JSONResponse(
-                status_code=404,
-                content={"error": "Комната не найдена"}
-            )
-        
-        room_data = tournament_rooms[room_id]
-        player_id = request.player_id
-        
-        # Проверяем, не присоединён ли уже игрок
-        if player_id in room_data["players"]:
-            return {
-                "success": True,
-                "role": "player",
-                "room_id": room_id,
-                "message": "Вы уже присоединены как игрок"
-            }
-        
-        if player_id in room_data["spectators"]:
-            return {
-                "success": True,
-                "role": "spectator",
-                "room_id": room_id,
-                "message": "Вы уже присоединены как зритель"
-            }
-        
-        # Определяем роль
-        role = request.role
-        if role is None:
-            # Автоматически определяем роль
-            if len(room_data["players"]) < 2:
-                role = "player"
-            else:
-                role = "spectator"
-        
-        # Присоединяем
-        if role == "player":
-            if len(room_data["players"]) >= 2:
-                return JSONResponse(
-                    status_code=400,
-                    content={"error": "Все слоты для игроков заняты. Присоединитесь как зритель"}
-                )
-            room_data["players"].append(player_id)
-        else:  # spectator
-            room_data["spectators"].append(player_id)
-        
-        logger.info(f"Игрок {player_id} присоединился к турнирной комнате {room_id} как {role}")
-        
-        # Уведомляем других участников через WebSocket (если есть соединения)
-        notification_room_id = f"tournament_{room_id}"
-        if notification_room_id in manager.active_connections:
-            await manager.send_to_room(notification_room_id, {
-                "type": "tournament_room_updated",
-                "room_id": room_id,
-                "players_count": len(room_data["players"]),
-                "spectators_count": len(room_data["spectators"])
-            })
-        
-        return {
-            "success": True,
-            "role": role,
-            "room_id": room_id,
-            "players_count": len(room_data["players"]),
-            "spectators_count": len(room_data["spectators"])
-        }
-    except Exception as e:
-        logger.error(f"Ошибка при присоединении к турнирной комнате {room_id}: {e}", exc_info=True)
-        return JSONResponse(
-            status_code=500,
-            content={"error": "Внутренняя ошибка сервера"}
-        )
 
 
 def rebuild_custom_moves(room):
@@ -897,7 +648,6 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
             matchmaking_queue.remove(player_entry)
 
 
-import asyncio
 import heapq
 
 
