@@ -88,6 +88,39 @@
         </div>
     </div>
     
+    <!-- Экран турниров -->
+    <div id="tournament-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Турнирные комнаты</h2>
+            
+            <!-- Форма создания комнаты -->
+            <div class="tournament-create-form">
+                <h3>Создать новую комнату</h3>
+                <div class="form-group">
+                    <label for="tournament-room-name">Название комнаты:</label>
+                    <input type="text" id="tournament-room-name" placeholder="Введите название" maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="tournament-start-time">Время старта (МСК):</label>
+                    <input type="datetime-local" id="tournament-start-time">
+                </div>
+                <button class="menu-btn" id="btn-create-tournament-room">Создать комнату</button>
+            </div>
+            
+            <!-- Список комнат -->
+            <div class="tournament-rooms-list">
+                <h3>Доступные комнаты</h3>
+                <button class="menu-btn secondary" id="btn-refresh-rooms">Обновить список</button>
+                <div id="tournament-rooms-container">
+                    <p class="loading-text">Загрузка...</p>
+                </div>
+            </div>
+            
+            <button class="back-btn" id="btn-back-tournament">← Назад</button>
+        </div>
+    </div>
+    
     <!-- Игровой экран -->
     <div id="game-screen" class="hidden">
         <div class="container">

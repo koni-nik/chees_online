@@ -158,3 +158,15 @@ class GetRatingRequest(BaseModel):
     """Запрос на получение рейтинга."""
     type: str = Field(..., pattern="^get_rating$")
 
+
+class CreateTournamentRoomRequest(BaseModel):
+    """Запрос на создание турнирной комнаты."""
+    name: str = Field(..., min_length=1, max_length=100, description="Название комнаты")
+    start_time: str = Field(..., description="Время старта в формате ISO (московское время)")
+
+
+class JoinTournamentRoomRequest(BaseModel):
+    """Запрос на присоединение к турнирной комнате."""
+    player_id: str = Field(..., min_length=1, description="ID игрока")
+    role: Optional[str] = Field(None, pattern="^(player|spectator)$", description="Роль: player или spectator")
+

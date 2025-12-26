@@ -3,11 +3,35 @@ from typing import List, Tuple, Dict, Optional
 import copy
 import sys
 from pathlib import Path
+import importlib.util
 
-# Добавляем путь к shared модулю
-sys.path.insert(0, str(Path(__file__).parent.parent / "shared"))
+# Добавляем путь к shared модулю и импортируем chess_engine
+shared_path = Path(__file__).parent.parent / "shared"
+chess_engine_path = shared_path / "chess_engine.py"
 
-from chess_engine import ChessPiece, ChessBoard, ChessRules, PieceType
+# Проверяем существование файла
+if not chess_engine_path.exists():
+    raise ImportError(f"Файл chess_engine.py не найден по пути: {chess_engine_path}")
+
+# Используем importlib для прямого импорта модуля
+try:
+    spec = importlib.util.spec_from_file_location("chess_engine", str(chess_engine_path.resolve()))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Не удалось создать spec для модуля chess_engine из {chess_engine_path}")
+    
+    chess_engine = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(chess_engine)
+    
+    # Импортируем нужные классы
+    if not hasattr(chess_engine, 'ChessPiece'):
+        raise ImportError(f"Класс ChessPiece не найден в модуле chess_engine. Доступные атрибуты: {[x for x in dir(chess_engine) if not x.startswith('_')]}")
+    
+    ChessPiece = chess_engine.ChessPiece
+    ChessBoard = chess_engine.ChessBoard
+    ChessRules = chess_engine.ChessRules
+    PieceType = chess_engine.PieceType
+except Exception as e:
+    raise ImportError(f"Ошибка при импорте chess_engine из {chess_engine_path}: {e}") from e
 
 
 class Piece(ChessPiece):

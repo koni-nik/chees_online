@@ -400,12 +400,34 @@ class ChessGame {
             matchmakingBtn.addEventListener('click', () => this.startMatchmaking());
         }
         
+        // Турниры
+        const tournamentsBtn = document.getElementById('btn-tournaments');
+        if (tournamentsBtn) {
+            tournamentsBtn.addEventListener('click', () => this.showTournamentScreen());
+        }
+        
         document.getElementById('btn-join').addEventListener('click', () => {
             this.joinRoom(document.getElementById('room-input').value || this.generateId());
         });
         document.getElementById('btn-create').addEventListener('click', () => this.joinRoom(this.generateId()));
         document.getElementById('btn-back-room').addEventListener('click', () => this.showScreen('main-menu'));
         document.getElementById('btn-back-stats').addEventListener('click', () => this.showScreen('main-menu'));
+        
+        // Обработчики турнирных комнат
+        const btnBackTournament = document.getElementById('btn-back-tournament');
+        if (btnBackTournament) {
+            btnBackTournament.addEventListener('click', () => this.showScreen('main-menu'));
+        }
+        
+        const btnCreateTournamentRoom = document.getElementById('btn-create-tournament-room');
+        if (btnCreateTournamentRoom) {
+            btnCreateTournamentRoom.addEventListener('click', () => this.createTournamentRoom());
+        }
+        
+        const btnRefreshRooms = document.getElementById('btn-refresh-rooms');
+        if (btnRefreshRooms) {
+            btnRefreshRooms.addEventListener('click', () => this.loadTournamentRooms());
+        }
         
         document.getElementById('resign').addEventListener('click', () => {
             if (this.isLocalGame) {
@@ -588,6 +610,243 @@ class ChessGame {
             document.getElementById('stats-percent').textContent = `Белые: ${whitePct}%  |  Чёрные: ${blackPct}%`;
         }
         this.showScreen('stats-screen');
+    }
+    
+    // ============ ТУРНИРНЫЕ КОМНАТЫ ============
+    showTournamentScreen() {
+        this.showScreen('tournament-screen');
+        // Устанавливаем значение по умолчанию для времени (текущее время)
+        const timeInput = document.getElementById('tournament-start-time');
+        if (timeInput && !timeInput.value) {
+            const now = new Date();
+            // Форматируем для datetime-local (YYYY-MM-DDTHH:MM)
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            timeInput.value = `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+        this.loadTournamentRooms();
+    }
+    
+    async loadTournamentRooms() {
+        const container = document.getElementById('tournament-rooms-container');
+        if (!container) return;
+        
+        container.innerHTML = '<p class="loading-text">Загрузка...</p>';
+        
+        try {
+            const response = await fetch('/api/tournament-rooms');
+            if (!response.ok) {
+                throw new Error('Ошибка загрузки комнат');
+            }
+            
+            const rooms = await response.json();
+            this.displayTournamentRooms(rooms);
+        } catch (error) {
+            console.error('Ошибка загрузки турнирных комнат:', error);
+            container.innerHTML = '<p class="error-text">Ошибка загрузки комнат. Попробуйте обновить страницу.</p>';
+        }
+    }
+    
+    displayTournamentRooms(rooms) {
+        const container = document.getElementById('tournament-rooms-container');
+        if (!container) return;
+        
+        if (rooms.length === 0) {
+            container.innerHTML = '<p class="empty-text">Нет доступных комнат. Создайте новую!</p>';
+            return;
+        }
+        
+        container.innerHTML = '';
+        
+        rooms.forEach(room => {
+            const roomCard = document.createElement('div');
+            roomCard.className = 'tournament-room-card';
+            
+            // Форматируем время старта
+            const startTime = new Date(room.start_time);
+            const timeStr = startTime.toLocaleString('ru-RU', {
+                timeZone: 'Europe/Moscow',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            // Вычисляем время до старта
+            const now = new Date();
+            const timeUntilStart = startTime - now;
+            let timeStatus = '';
+            if (timeUntilStart > 0) {
+                const hours = Math.floor(timeUntilStart / (1000 * 60 * 60));
+                const minutes = Math.floor((timeUntilStart % (1000 * 60 * 60)) / (1000 * 60));
+                timeStatus = `Старт через: ${hours}ч ${minutes}м`;
+            } else {
+                timeStatus = room.status === 'started' ? 'Началась' : 'Ожидание';
+            }
+            
+            const statusClass = room.status === 'started' ? 'status-started' : 'status-waiting';
+            const canJoin = room.players_count < room.max_players || room.status === 'started';
+            
+            roomCard.innerHTML = `
+                <div class="room-card-header">
+                    <h4>${this.escapeHtml(room.name)}</h4>
+                    <span class="room-status ${statusClass}">${room.status === 'started' ? 'Началась' : 'Ожидание'}</span>
+                </div>
+                <div class="room-card-info">
+                    <div class="room-info-item">
+                        <span class="info-label">Время старта:</span>
+                        <span class="info-value">${timeStr} (МСК)</span>
+                    </div>
+                    <div class="room-info-item">
+                        <span class="info-label">${timeStatus}</span>
+                    </div>
+                    <div class="room-info-item">
+                        <span class="info-label">Игроки:</span>
+                        <span class="info-value">${room.players_count}/${room.max_players}</span>
+                    </div>
+                    <div class="room-info-item">
+                        <span class="info-label">Зрители:</span>
+                        <span class="info-value">${room.spectators_count}</span>
+                    </div>
+                </div>
+                <div class="room-card-actions">
+                    <button class="btn-join-room" data-room-id="${room.id}" ${!canJoin ? 'disabled' : ''}>
+                        ${room.players_count < room.max_players ? 'Присоединиться как игрок' : 'Присоединиться как зритель'}
+                    </button>
+                </div>
+            `;
+            
+            // Обработчик кнопки присоединения
+            const joinBtn = roomCard.querySelector('.btn-join-room');
+            if (joinBtn && canJoin) {
+                joinBtn.addEventListener('click', () => this.joinTournamentRoom(room.id));
+            }
+            
+            container.appendChild(roomCard);
+        });
+    }
+    
+    async createTournamentRoom() {
+        const nameInput = document.getElementById('tournament-room-name');
+        const timeInput = document.getElementById('tournament-start-time');
+        const createBtn = document.getElementById('btn-create-tournament-room');
+        
+        if (!nameInput || !timeInput) return;
+        
+        const name = nameInput.value.trim();
+        const startTime = timeInput.value;
+        
+        if (!name) {
+            alert('Введите название комнаты');
+            return;
+        }
+        
+        if (!startTime) {
+            alert('Выберите время старта');
+            return;
+        }
+        
+        // Конвертируем локальное время в формат ISO для московского времени
+        // datetime-local возвращает время в локальном часовом поясе
+        // Нужно конвертировать в московское время
+        const localDate = new Date(startTime);
+        // Создаём строку в формате ISO для московского времени
+        const moscowTimeStr = this.formatDateTimeForMoscow(localDate);
+        
+        createBtn.disabled = true;
+        createBtn.textContent = 'Создание...';
+        
+        try {
+            const response = await fetch('/api/tournament-rooms', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    name: name,
+                    start_time: moscowTimeStr
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка создания комнаты');
+            }
+            
+            const room = await response.json();
+            alert(`Комната "${room.name}" успешно создана!`);
+            
+            // Очищаем форму
+            nameInput.value = '';
+            timeInput.value = '';
+            
+            // Обновляем список комнат
+            await this.loadTournamentRooms();
+        } catch (error) {
+            console.error('Ошибка создания турнирной комнаты:', error);
+            alert('Ошибка создания комнаты: ' + error.message);
+        } finally {
+            createBtn.disabled = false;
+            createBtn.textContent = 'Создать комнату';
+        }
+    }
+    
+    formatDateTimeForMoscow(date) {
+        // datetime-local input возвращает время в локальном часовом поясе пользователя
+        // Нужно конвертировать это время в московское время
+        // Создаём строку в формате ISO для московского времени
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        
+        // Возвращаем в формате ISO без указания часового пояса
+        // Сервер будет интерпретировать это как московское время
+        return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+    }
+    
+    async joinTournamentRoom(roomId) {
+        try {
+            const response = await fetch(`/api/tournament-rooms/${roomId}/join`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    player_id: this.playerId
+                })
+            });
+            
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.error || 'Ошибка присоединения');
+            }
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Переходим в игровую комнату
+                // Используем roomId турнирной комнаты как обычную игровую комнату
+                this.joinRoom(roomId);
+            } else {
+                alert('Не удалось присоединиться к комнате');
+            }
+        } catch (error) {
+            console.error('Ошибка присоединения к турнирной комнате:', error);
+            alert('Ошибка присоединения: ' + error.message);
+        }
+    }
+    
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
     
     startLocalGame() {
