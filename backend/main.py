@@ -7,7 +7,11 @@ from starlette.responses import Response as StarletteResponse
 import json
 import uuid
 import time
+import os
+from pathlib import Path
 from typing import Dict, List, Optional
+from datetime import datetime
+import pytz
 from game_logic import ChessGame
 from rating import RatingSystem
 from analysis import PositionAnalyzer
@@ -19,13 +23,27 @@ from schemas import (
     ToggleCardRequest, DeleteCardRequest, ChatRequest, ResignRequest,
     OfferDrawRequest, DrawResponseRequest, RequestUndoRequest, UndoResponseRequest,
     RequestRematchRequest, RematchResponseRequest, SetTimeControlRequest,
-    GetPositionAnalysisRequest, ExportPGNRequest, GetRatingRequest
+    GetPositionAnalysisRequest, ExportPGNRequest, GetRatingRequest,
+    CreateTournamentRoomRequest, JoinTournamentRoomRequest
 )
 from pydantic import ValidationError
 from database import db
 import aiosqlite
 
 logger = setup_logger()
+
+# Определяем базовый путь в зависимости от окружения
+# В Docker: /app, на localhost: родительская директория от backend/
+BASE_DIR = Path(__file__).parent.parent  # backend/ -> корень проекта
+if os.path.exists("/app"):  # Docker окружение
+    FRONTEND_BASE = Path("/app")
+else:  # Localhost окружение
+    FRONTEND_BASE = BASE_DIR
+
+FRONTEND_DIR = FRONTEND_BASE / "frontend"
+FRONTEND_V25_DIR = FRONTEND_BASE / "frontend-v2.5"
+FRONTEND_V26_DIR = FRONTEND_BASE / "frontend-v2.6"
+FRONTEND_V27_DIR = FRONTEND_BASE / "frontend-v2.7"
 
 app = FastAPI(title="Chess Online")
 
@@ -57,6 +75,256 @@ async def health_check():
 
 #xtu
 
+# ============ API для турнирных комнат ============
+
+# Московский часовой пояс
+MOSCOW_TZ = pytz.timezone('Europe/Moscow')
+
+
+async def check_tournament_rooms_start_time():
+    """Периодическая проверка времени старта турнирных комнат."""
+    while True:
+        try:
+            current_time = datetime.now(pytz.UTC)
+            for room_id, room_data in list(tournament_rooms.items()):
+                if room_data["status"] == "waiting":
+                    start_time_utc = room_data["start_time_utc"]
+                    if current_time >= start_time_utc:
+                        # Время старта наступило
+                        room_data["status"] = "started"
+                        # Уведомляем всех участников через WebSocket
+                        notification_room_id = f"tournament_{room_id}"
+                        if notification_room_id in manager.active_connections:
+                            await manager.send_to_room(notification_room_id, {
+                                "type": "tournament_room_started",
+                                "room_id": room_id,
+                                "name": room_data["name"]
+                            })
+                        logger.info(f"Турнирная комната {room_id} ({room_data['name']}) началась")
+        except Exception as e:
+            logger.error(f"Ошибка при проверке времени старта турнирных комнат: {e}", exc_info=True)
+        
+        await asyncio.sleep(10)  # Проверяем каждые 10 секунд
+
+
+@app.post("/api/tournament-rooms")
+async def create_tournament_room(request: CreateTournamentRoomRequest):
+    """Создание турнирной комнаты."""
+    try:
+        # Парсим время старта (ожидаем ISO формат без timezone - интерпретируем как московское время)
+        try:
+            # Пробуем распарсить как ISO
+            if 'T' in request.start_time:
+                # Формат: YYYY-MM-DDTHH:MM:SS или YYYY-MM-DDTHH:MM
+                parts = request.start_time.split('T')
+                date_part = parts[0]
+                time_part = parts[1] if len(parts) > 1 else '00:00:00'
+                # Добавляем секунды если их нет
+                if len(time_part.split(':')) == 2:
+                    time_part += ':00'
+                datetime_str = f"{date_part}T{time_part}"
+                start_time_naive = datetime.strptime(datetime_str, "%Y-%m-%dT%H:%M:%S")
+            else:
+                # Формат: YYYY-MM-DD HH:MM:SS
+                start_time_naive = datetime.strptime(request.start_time, "%Y-%m-%d %H:%M:%S")
+        except Exception as e:
+            logger.error(f"Ошибка парсинга времени: {e}, входные данные: {request.start_time}")
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Неверный формат времени. Используйте формат YYYY-MM-DDTHH:MM:SS (московское время)"}
+            )
+        
+        # Интерпретируем как московское время
+        start_time_moscow = MOSCOW_TZ.localize(start_time_naive)
+        
+        # Конвертируем в UTC для внутреннего хранения
+        start_time_utc = start_time_moscow.astimezone(pytz.UTC)
+        
+        # Проверяем, что время не в прошлом
+        current_time_utc = datetime.now(pytz.UTC)
+        if start_time_utc < current_time_utc:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Время старта не может быть в прошлом"}
+            )
+        
+        # Создаём комнату
+        room_id = str(uuid.uuid4())[:8]
+        tournament_rooms[room_id] = {
+            "id": room_id,
+            "name": request.name,
+            "start_time": start_time_moscow.isoformat(),  # Сохраняем московское время для отображения
+            "start_time_utc": start_time_utc,  # UTC для внутренних проверок
+            "players": [],
+            "spectators": [],
+            "created_at": time.time(),
+            "status": "waiting"
+        }
+        
+        logger.info(f"Создана турнирная комната: {room_id} ({request.name}), старт: {start_time_moscow.isoformat()}")
+        
+        return {
+            "id": room_id,
+            "name": request.name,
+            "start_time": start_time_moscow.isoformat(),
+            "players_count": 0,
+            "spectators_count": 0,
+            "status": "waiting"
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при создании турнирной комнаты: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Внутренняя ошибка сервера"}
+        )
+
+
+@app.get("/api/tournament-rooms")
+async def list_tournament_rooms():
+    """Получение списка всех турнирных комнат."""
+    try:
+        rooms_list = []
+        current_time_utc = datetime.now(pytz.UTC)
+        
+        for room_id, room_data in tournament_rooms.items():
+            # Проверяем статус на основе времени
+            if room_data["status"] == "waiting" and current_time_utc >= room_data["start_time_utc"]:
+                room_data["status"] = "started"
+            
+            rooms_list.append({
+                "id": room_data["id"],
+                "name": room_data["name"],
+                "start_time": room_data["start_time"],
+                "players_count": len(room_data["players"]),
+                "spectators_count": len(room_data["spectators"]),
+                "status": room_data["status"],
+                "max_players": 2
+            })
+        
+        # Сортируем по времени создания (новые первыми)
+        rooms_list.sort(key=lambda x: tournament_rooms[x["id"]]["created_at"], reverse=True)
+        
+        return rooms_list
+    except Exception as e:
+        logger.error(f"Ошибка при получении списка турнирных комнат: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Внутренняя ошибка сервера"}
+        )
+
+
+@app.get("/api/tournament-rooms/{room_id}")
+async def get_tournament_room(room_id: str):
+    """Получение информации о конкретной турнирной комнате."""
+    try:
+        if room_id not in tournament_rooms:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Комната не найдена"}
+            )
+        
+        room_data = tournament_rooms[room_id]
+        current_time_utc = datetime.now(pytz.UTC)
+        
+        # Проверяем статус
+        if room_data["status"] == "waiting" and current_time_utc >= room_data["start_time_utc"]:
+            room_data["status"] = "started"
+        
+        return {
+            "id": room_data["id"],
+            "name": room_data["name"],
+            "start_time": room_data["start_time"],
+            "players": room_data["players"],
+            "spectators": room_data["spectators"],
+            "players_count": len(room_data["players"]),
+            "spectators_count": len(room_data["spectators"]),
+            "status": room_data["status"],
+            "max_players": 2
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при получении информации о комнате {room_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Внутренняя ошибка сервера"}
+        )
+
+
+@app.post("/api/tournament-rooms/{room_id}/join")
+async def join_tournament_room(room_id: str, request: JoinTournamentRoomRequest):
+    """Присоединение к турнирной комнате."""
+    try:
+        if room_id not in tournament_rooms:
+            return JSONResponse(
+                status_code=404,
+                content={"error": "Комната не найдена"}
+            )
+        
+        room_data = tournament_rooms[room_id]
+        player_id = request.player_id
+        
+        # Проверяем, не присоединён ли уже игрок
+        if player_id in room_data["players"]:
+            return {
+                "success": True,
+                "role": "player",
+                "room_id": room_id,
+                "message": "Вы уже присоединены как игрок"
+            }
+        
+        if player_id in room_data["spectators"]:
+            return {
+                "success": True,
+                "role": "spectator",
+                "room_id": room_id,
+                "message": "Вы уже присоединены как зритель"
+            }
+        
+        # Определяем роль
+        role = request.role
+        if role is None:
+            # Автоматически определяем роль
+            if len(room_data["players"]) < 2:
+                role = "player"
+            else:
+                role = "spectator"
+        
+        # Присоединяем
+        if role == "player":
+            if len(room_data["players"]) >= 2:
+                return JSONResponse(
+                    status_code=400,
+                    content={"error": "Все слоты для игроков заняты. Присоединитесь как зритель"}
+                )
+            room_data["players"].append(player_id)
+        else:  # spectator
+            room_data["spectators"].append(player_id)
+        
+        logger.info(f"Игрок {player_id} присоединился к турнирной комнате {room_id} как {role}")
+        
+        # Уведомляем других участников через WebSocket (если есть соединения)
+        notification_room_id = f"tournament_{room_id}"
+        if notification_room_id in manager.active_connections:
+            await manager.send_to_room(notification_room_id, {
+                "type": "tournament_room_updated",
+                "room_id": room_id,
+                "players_count": len(room_data["players"]),
+                "spectators_count": len(room_data["spectators"])
+            })
+        
+        return {
+            "success": True,
+            "role": role,
+            "room_id": room_id,
+            "players_count": len(room_data["players"]),
+            "spectators_count": len(room_data["spectators"])
+        }
+    except Exception as e:
+        logger.error(f"Ошибка при присоединении к турнирной комнате {room_id}: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={"error": "Внутренняя ошибка сервера"}
+        )
+
 @app.on_event("startup")
 async def startup_event():
     """Инициализация базы данных при запуске приложения."""
@@ -71,6 +339,8 @@ async def startup_event():
         # Используем правильный способ создания задачи в контексте startup
         loop = asyncio.get_event_loop()
         loop.create_task(initialize_db_background())
+        # Запускаем фоновую задачу для проверки времени старта турнирных комнат
+        loop.create_task(check_tournament_rooms_start_time())
         logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
@@ -91,6 +361,9 @@ waiting_players: List[WebSocket] = []  # Очередь для matchmaking
 matchmaking_queue: List[Dict] = []  # [{player_id, websocket, rating, timestamp}]
 matchmaking_event = None  # asyncio.Event для уведомлений
 connections: Dict[str, WebSocket] = {}  # player_id -> websocket
+
+# Хранилище турнирных комнат
+tournament_rooms: Dict[str, Dict] = {}  # room_id -> tournament room data
 
 # Рейтинги игроков теперь в rating.py
 
@@ -189,43 +462,46 @@ def rebuild_custom_moves(room):
 
 @app.get("/")
 async def root():
-    return FileResponse("/app/frontend/index.html")
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
 @app.get("/frontend")
 @app.get("/frontend/")
 async def frontend():
     """Маршрут для доступа к фронтенду через /frontend/"""
-    return FileResponse("/app/frontend/index.html")
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
 
 
 @app.get("/v2.5")
 async def v25_root():
-    return FileResponse("/app/frontend-v2.5/index.html")
+    return FileResponse(str(FRONTEND_V25_DIR / "index.html"))
 
 
 @app.get("/v2.6")
 async def v26_root():
-    return FileResponse("/app/frontend-v2.6/index.html")
+    return FileResponse(str(FRONTEND_V26_DIR / "index.html"))
 
 
 @app.get("/v2.7")
 async def v27_root():
-    response = FileResponse("/app/frontend-v2.7/index.html")
+    response = FileResponse(str(FRONTEND_V27_DIR / "index.html"))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
     return response
 
 
-app.mount("/v2.5/static", StaticFiles(directory="/app/frontend-v2.5"), name="static_v25")
-app.mount("/v2.6/static", StaticFiles(directory="/app/frontend-v2.6"), name="static_v26")
-app.mount("/v2.7/static", StaticFiles(directory="/app/frontend-v2.7/static"), name="static_v27")
+app.mount("/v2.5/static", StaticFiles(directory=str(FRONTEND_V25_DIR)), name="static_v25")
+app.mount("/v2.6/static", StaticFiles(directory=str(FRONTEND_V26_DIR)), name="static_v26")
+app.mount("/v2.7/static", StaticFiles(directory=str(FRONTEND_V27_DIR / "static")), name="static_v27")
+
+# Монтируем статические файлы для основной версии
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 
 # Маршрут для game.js в v2.7 (находится в корне директории)
 @app.get("/v2.7/game.js")
 async def v27_game_js():
-    response = FileResponse("/app/frontend-v2.7/game.js", media_type="application/javascript")
+    response = FileResponse(str(FRONTEND_V27_DIR / "game.js"), media_type="application/javascript")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
@@ -920,16 +1196,13 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             pass
 
 
-# Монтируем статические файлы
-app.mount("/static", StaticFiles(directory="/app/frontend"), name="static")
 
 # Для совместимости со старыми ссылками /v2 -> /v2.5
 @app.get("/v2")
 async def v2_redirect():
-    return FileResponse("/app/frontend-v2.5/index.html")
+    return FileResponse(str(FRONTEND_V25_DIR / "index.html"))
 
 
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
