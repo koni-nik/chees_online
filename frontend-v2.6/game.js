@@ -471,8 +471,13 @@ class ChessGame {
         this.canvas.addEventListener('click', (e) => this.handleClick(e));
         this.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); this.handleClick(e, true); });
         
-        // Touch события для мобильных
-        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e));
+        // Touch события для мобильных (с passive: false для preventDefault)
+        this.canvas.addEventListener('touchstart', (e) => this.handleTouch(e), { passive: false });
+        this.canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+        this.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            // Обработка завершения касания если нужно
+        }, { passive: false });
         
         this.initDevPanel();
         this.initMoveBoard();

@@ -214,7 +214,8 @@ class ChessGame {
         this.isReconnecting = false;
         
         // Анимации и звуки (новое для v2.7)
-        this.animation = new PieceAnimation(this.ctx, this.cellSize, this.coordsOffset);
+        // Инициализация будет после calculateBoardSize()
+        this.animation = null;
         this.soundManager = new SoundManager();
         
         // Рейтинг и анализ (новое для v2.7)
@@ -359,10 +360,65 @@ class ChessGame {
         this.matchmakingWs = null;
         
         this.initMenuListeners();
+        this.calculateBoardSize(); // Рассчитываем размер доски для мобильных устройств
+        
+        // Создаём animation объект после расчёта размеров
+        this.animation = new PieceAnimation(this.ctx, this.cellSize, this.coordsOffset);
+        
+        // Добавляем обработчик изменения размера окна
+        window.addEventListener('resize', () => {
+            this.calculateBoardSize();
+            // Пересоздаём animation с новыми размерами
+            this.animation = new PieceAnimation(this.ctx, this.cellSize, this.coordsOffset);
+            // Перерисовываем доску
+            if (this.board) {
+                this.draw();
+            }
+        });
+        
         this.initBoard();
     }
     
     generateId() { return Math.random().toString(36).substring(2, 10); }
+    
+    // ============ РАСЧЁТ РАЗМЕРА ДОСКИ ============
+    calculateBoardSize() {
+        // Рассчитываем максимальный размер доски на основе размера экрана
+        const maxSize = Math.min(
+            window.innerWidth - 40,  // Отступы по 20px с каждой стороны
+            (window.innerHeight - 200) * 0.8,  // Учитываем header и sidebar
+            520  // Максимальный размер (как было изначально)
+        );
+        
+        // Округляем до размера, кратного 8 клеткам
+        const boardSize = Math.floor(maxSize / 8) * 8;
+        
+        // Пересчитываем размер клетки и отступ
+        this.cellSize = boardSize / 8;
+        this.coordsOffset = Math.max(10, Math.floor(this.cellSize * 0.05));  // Минимум 10px
+        
+        // Обновляем размер основного canvas
+        const totalSize = boardSize + (this.coordsOffset * 2);
+        this.canvas.width = totalSize;
+        this.canvas.height = totalSize;
+        this.canvas.style.width = totalSize + 'px';
+        this.canvas.style.height = totalSize + 'px';
+        
+        // Обновляем размер canvas для анимаций
+        const animationCanvas = document.getElementById('animation-layer');
+        if (animationCanvas) {
+            animationCanvas.width = totalSize;
+            animationCanvas.height = totalSize;
+            animationCanvas.style.width = totalSize + 'px';
+            animationCanvas.style.height = totalSize + 'px';
+        }
+        
+        // Обновляем animation объект с новыми размерами
+        if (this.animation) {
+            this.animation.cellSize = this.cellSize;
+            this.animation.coordsOffset = this.coordsOffset;
+        }
+    }
     
     // ============ СОХРАНЕНИЕ/ЗАГРУЗКА ============
     loadStats() {
