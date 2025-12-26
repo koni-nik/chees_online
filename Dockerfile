@@ -9,9 +9,12 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && apt-get install -y --no-ins
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Копируем зависимости
+# Копируем зависимости и устанавливаем их
+# Это делается отдельно для лучшего кэширования слоев Docker
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip list | grep -i pytz || (echo "ОШИБКА: pytz не установлен!" && exit 1)
 
 # Копируем код
 COPY backend/ ./backend/
