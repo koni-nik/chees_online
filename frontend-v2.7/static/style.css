@@ -134,6 +134,8 @@ html {
     overflow-y: auto;
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
+    touch-action: pan-y; /* Разрешаем вертикальную прокрутку */
+    height: 100%;
 }
 
 body {
@@ -141,10 +143,12 @@ body {
     background: var(--bg-primary);
     background-image: var(--bg-gradient);
     min-height: 100vh;
+    height: 100%;
     color: var(--text-color);
     overflow-x: hidden;
     overflow-y: auto;
     -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
+    touch-action: pan-y; /* Разрешаем вертикальную прокрутку на touch-устройствах */
 }
 
 .hidden {
@@ -158,15 +162,18 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
+    min-height: 100vh; /* Изменено с height: 100% на min-height для поддержки прокрутки */
     display: flex;
     justify-content: center;
     align-items: flex-start; /* Изменено с center на flex-start чтобы верхние элементы не съедались */
     z-index: 50;
-    overflow-y: auto;
+    overflow-y: scroll; /* Изменено с auto на scroll для гарантированной прокрутки */
     overflow-x: hidden;
     -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
+    touch-action: pan-y pan-x pinch-zoom; /* Разрешаем вертикальную прокрутку и другие жесты на touch-устройствах */
     padding-top: 20px; /* Отступ сверху чтобы элементы не прилипали к верху */
     padding-bottom: 20px; /* Отступ снизу */
+    overscroll-behavior: contain; /* Предотвращаем прокрутку фона при достижении границ */
 }
 
 .menu-bg {
@@ -175,8 +182,10 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
+    min-height: 100vh; /* Поддержка прокрутки */
     background: var(--bg-gradient);
     animation: bgPulse 8s ease-in-out infinite;
+    pointer-events: none; /* Не блокируем touch-события */
 }
 
 [data-theme="neon"] .menu-bg {
@@ -1589,11 +1598,25 @@ body:has(#game-screen:not(.hidden)) .switchers-panel {
     .menu-screen {
         padding-top: 10px;
         padding-bottom: 10px;
+        height: 100vh; /* Используем viewport height */
+        min-height: 100vh;
+        position: fixed; /* Оставляем fixed для правильного отображения */
+        overflow-y: scroll; /* Принудительная прокрутка */
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y; /* Явно разрешаем вертикальную прокрутку */
     }
     
     .screen-title {
         margin-top: 10px;
         margin-bottom: 20px;
+    }
+    
+    /* Улучшение прокрутки на мобильных */
+    body {
+        position: relative;
+        overflow-y: scroll;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
     }
 }
 
