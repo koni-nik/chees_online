@@ -1241,16 +1241,37 @@ class ChessGame {
             ? event.touches[0] 
             : null;
         
-        if (!touch) return;
+        if (!touch) {
+            console.log('[DEBUG] Touch: No touch point found');
+            return;
+        }
         
         const rect = this.canvas.getBoundingClientRect();
         const x = Math.floor((touch.clientX - rect.left) / this.cellSize);
         const y = Math.floor((touch.clientY - rect.top) / this.cellSize);
         
-        if (x < 0 || x > 7 || y < 0 || y > 7) return;
+        console.log('[DEBUG] Touch:', { 
+            x, y, 
+            clientX: touch.clientX, 
+            clientY: touch.clientY,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+            cellSize: this.cellSize,
+            isLocalGame: this.isLocalGame
+        });
         
-        if (this.isLocalGame) this.handleLocalClick(x, y);
-        else this.handleOnlineClick(x, y);
+        if (x < 0 || x > 7 || y < 0 || y > 7) {
+            console.log('[DEBUG] Touch: Out of bounds');
+            return;
+        }
+        
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Touch: Calling handleLocalClick');
+            this.handleLocalClick(x, y);
+        } else {
+            console.log('[DEBUG] Touch: Calling handleOnlineClick');
+            this.handleOnlineClick(x, y);
+        }
     }
     
     handleClick(event, isRightClick = false) {
@@ -1374,12 +1395,24 @@ class ChessGame {
     }
     
     handleOnlineClick(x, y) {
-        if (this.myColor !== this.currentPlayer) return;
+        // Проверяем, что это онлайн игра и есть WebSocket соединение
+        if (this.isLocalGame || !this.ws || this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Move blocked: Not online game or WebSocket not open. isLocalGame=${this.isLocalGame}, ws=${this.ws}, readyState=${this.ws ? this.ws.readyState : 'N/A'}`);
+            return;
+        }
+        
+        // Проверяем, что это ход игрока
+        if (this.myColor === null || this.myColor !== this.currentPlayer) {
+            console.log(`[DEBUG] Move blocked: Not current player's turn. myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
+            return;
+        }
+        
         const clickedPiece = this.board[x][y];
         
         if (this.selectedPiece) {
             const isValid = this.validMoves.some(m => m[0] === x && m[1] === y) || this.validAttacks.some(a => a[0] === x && a[1] === y);
             if (isValid) {
+                console.log(`[DEBUG] Sending move: from=${this.selectedPiece}, to=[${x}, ${y}]`);
                 this.ws.send(JSON.stringify({ type: 'move', from: this.selectedPiece, to: [x, y] }));
                 return;
             }
@@ -1387,6 +1420,7 @@ class ChessGame {
         
         if (clickedPiece && clickedPiece.color === this.myColor) {
             this.selectedPiece = [x, y];
+            console.log(`[DEBUG] Requesting valid moves for position [${x}, ${y}]`);
             this.ws.send(JSON.stringify({ type: 'get_valid_moves', position: [x, y] }));
             document.getElementById('selected-piece-info').textContent = `${clickedPiece.color === 'white' ? 'Белая' : 'Чёрная'} ${this.getPieceNameRu(clickedPiece.type)}`;
         } else {

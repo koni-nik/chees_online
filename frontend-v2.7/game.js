@@ -870,6 +870,8 @@ class ChessGame {
     async joinTournamentRoom(roomId) {
         try {
             console.log(`[DEBUG] Tournament: Joining room ${roomId}, playerId=${this.playerId}`);
+            this.isLocalGame = false; // Убеждаемся, что это онлайн игра
+            
             const response = await fetch(`/api/tournament-rooms/${roomId}/join`, {
                 method: 'POST',
                 headers: {
@@ -891,8 +893,13 @@ class ChessGame {
             if (result.success) {
                 // Переходим в игровую комнату
                 // Используем roomId турнирной комнаты как обычную игровую комнату
-                console.log(`[DEBUG] Tournament: Calling joinRoom(${roomId})`);
+                console.log(`[DEBUG] Tournament: Calling joinRoom(${roomId}), isLocalGame=${this.isLocalGame}`);
                 this.joinRoom(roomId);
+                
+                // Добавляем дополнительную проверку через небольшую задержку
+                setTimeout(() => {
+                    console.log(`[DEBUG] Tournament: After joinRoom - ws=${this.ws ? 'exists' : 'null'}, readyState=${this.ws ? this.ws.readyState : 'N/A'}, myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
+                }, 1000);
             } else {
                 console.log(`[DEBUG] Tournament: Join failed:`, result);
                 alert('Не удалось присоединиться к комнате');
@@ -1091,9 +1098,23 @@ class ChessGame {
     
     respondToDraw(accept) {
         document.getElementById('draw-offer-modal').classList.add('hidden');
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'draw_response', accept }));
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Draw Response: Local game, skipping');
+            return;
         }
+        
+        if (!this.ws) {
+            console.log('[DEBUG] Draw Response: WebSocket not initialized');
+            return;
+        }
+        
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Draw Response: WebSocket not open, readyState=${this.ws.readyState}`);
+            return;
+        }
+        
+        console.log(`[DEBUG] Draw Response: Sending draw_response, accept=${accept}`);
+        this.ws.send(JSON.stringify({ type: 'draw_response', accept }));
     }
     
     requestUndo() {
@@ -1129,9 +1150,23 @@ class ChessGame {
     
     respondToUndo(accept) {
         document.getElementById('undo-request-modal').classList.add('hidden');
-        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-            this.ws.send(JSON.stringify({ type: 'undo_response', accept }));
+        if (this.isLocalGame) {
+            console.log('[DEBUG] Undo Response: Local game, skipping');
+            return;
         }
+        
+        if (!this.ws) {
+            console.log('[DEBUG] Undo Response: WebSocket not initialized');
+            return;
+        }
+        
+        if (this.ws.readyState !== WebSocket.OPEN) {
+            console.log(`[DEBUG] Undo Response: WebSocket not open, readyState=${this.ws.readyState}`);
+            return;
+        }
+        
+        console.log(`[DEBUG] Undo Response: Sending undo_response, accept=${accept}`);
+        this.ws.send(JSON.stringify({ type: 'undo_response', accept }));
     }
     
     showDrawOffer() {
@@ -1777,12 +1812,21 @@ class ChessGame {
     }
     
     joinRoom(roomId) {
+        console.log(`[DEBUG] joinRoom: roomId=${roomId}, playerId=${this.playerId}`);
         this.isLocalGame = false;
         this.roomId = roomId;
         this.moveHistory = [];
         this.updateMoveHistoryDisplay();
         document.getElementById('current-room').textContent = roomId;
         
+        // Сбрасываем состояние перед подключением
+        this.myColor = null;
+        this.currentPlayer = 'white';
+        this.selectedPiece = null;
+        this.validMoves = [];
+        this.validAttacks = [];
+        
+        console.log(`[DEBUG] joinRoom: State reset, calling connectWebSocket`);
         this.connectWebSocket();
     }
     
@@ -1805,16 +1849,20 @@ class ChessGame {
         
         this.ws.onmessage = (e) => this.handleServerMessage(JSON.parse(e.data));
         
-        this.ws.onclose = () => {
+        this.ws.onclose = (event) => {
+            console.log(`[DEBUG] WebSocket: Closed, code=${event.code}, reason=${event.reason || 'none'}, wasClean=${event.wasClean}`);
             this.updateConnectionStatus(false);
             if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
+                console.log(`[DEBUG] WebSocket: Attempting reconnect ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`);
                 this.attemptReconnect();
             } else {
+                console.log(`[DEBUG] WebSocket: Max reconnects reached or not reconnecting`);
                 document.getElementById('status').textContent = 'Отключено';
             }
         };
         
-        this.ws.onerror = () => {
+        this.ws.onerror = (error) => {
+            console.error(`[DEBUG] WebSocket: Error occurred`, error);
             this.updateConnectionStatus(false);
             document.getElementById('status').textContent = 'Ошибка подключения';
         };
