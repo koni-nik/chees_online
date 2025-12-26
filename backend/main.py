@@ -399,8 +399,7 @@ matchmaking_queue: List[Dict] = []  # [{player_id, websocket, rating, timestamp}
 matchmaking_event = None  # asyncio.Event для уведомлений
 connections: Dict[str, WebSocket] = {}  # player_id -> websocket
 
-# Хранилище турнирных комнат
-tournament_rooms: Dict[str, Dict] = {}  # room_id -> tournament room data
+# tournament_rooms определен выше, перед API endpoints
 
 # Рейтинги игроков теперь в rating.py
 
