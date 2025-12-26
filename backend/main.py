@@ -475,8 +475,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             if message_type == "move":
                 player_color = room["colors"].get(player_id)
                 
+                logger.debug(f"Move request from {player_id}: from={from_pos}, to={to_pos}, player_color={player_color}, current_player={room['game'].current_player}")
+                
                 # Проверяем что ход делает правильный игрок
                 if player_color != room["game"].current_player:
+                    logger.warning(f"Wrong turn: player_color={player_color}, current_player={room['game'].current_player}")
                     await manager.send_to_player(room_id, player_id, {
                         "type": "error",
                         "message": "Не ваш ход"
@@ -485,6 +488,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 
                 # Выполняем ход (с учётом кастомных ходов)
                 result = room["game"].make_move(from_pos, to_pos, room["custom_moves"], promotion_piece)
+                logger.debug(f"Move result: success={result.get('success')}, message={result.get('message')}")
                 
                 if result["success"]:
                     # Обновляем таймеры
@@ -515,8 +519,8 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     # Отправляем обновление всем
                     await manager.send_to_room(room_id, {
                         "type": "move",
-                        "from": data["from"],
-                        "to": data["to"],
+                        "from": list(from_pos),
+                        "to": list(to_pos),
                         "board": room["game"].get_board_state(),
                         "current_player": room["game"].current_player,
                         "check": result.get("check", False),

@@ -190,10 +190,11 @@ class ChessGame:
             for y in range(8):
                 chess_piece = initial_board[x][y]
                 if chess_piece:
+                    # Создаём Piece с правильной позицией (x, y)
                     self.board[x][y] = Piece(
                         chess_piece.color,
                         chess_piece.type,
-                        chess_piece.position
+                        (x, y)  # Используем позицию на доске, а не из chess_piece
                     )
                     self.board[x][y].moved = chess_piece.moved
     
@@ -395,6 +396,11 @@ class ChessGame:
         
         valid = self.get_valid_moves(from_pos)
         all_valid = [tuple(m) for m in valid["moves"] + valid["attacks"]]
+        
+        # Логирование для отладки
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.debug(f"make_move: from={from_pos}, to={to_pos}, piece={piece.type.value if piece else None}, valid_moves={len(valid['moves'])}, valid_attacks={len(valid['attacks'])}, all_valid={len(all_valid)}")
         
         # Добавляем кастомные ходы
         if custom_moves:
