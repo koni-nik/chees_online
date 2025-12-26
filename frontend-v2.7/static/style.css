@@ -130,6 +130,12 @@
     --menu-title-glow: 0 0 30px rgba(0, 102, 204, 0.3);
 }
 
+html {
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
+}
+
 body {
     font-family: var(--font-main);
     background: var(--bg-primary);
@@ -137,6 +143,8 @@ body {
     min-height: 100vh;
     color: var(--text-color);
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
 }
 
 .hidden {
@@ -152,8 +160,13 @@ body {
     height: 100%;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start; /* Изменено с center на flex-start чтобы верхние элементы не съедались */
     z-index: 50;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch; /* Плавная прокрутка на iOS */
+    padding-top: 20px; /* Отступ сверху чтобы элементы не прилипали к верху */
+    padding-bottom: 20px; /* Отступ снизу */
 }
 
 .menu-bg {
@@ -189,6 +202,9 @@ body {
     z-index: 1;
     text-align: center;
     padding: 40px;
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
 }
 
 .menu-title {
@@ -1563,6 +1579,21 @@ body:has(#game-screen:not(.hidden)) .switchers-panel {
         max-width: 100%;
         margin-left: 10px;
         margin-right: 10px;
+    }
+    
+    /* Дополнительные отступы для menu-content на мобильных */
+    .menu-content {
+        padding: 20px 15px;
+    }
+    
+    .menu-screen {
+        padding-top: 10px;
+        padding-bottom: 10px;
+    }
+    
+    .screen-title {
+        margin-top: 10px;
+        margin-bottom: 20px;
     }
 }
 
