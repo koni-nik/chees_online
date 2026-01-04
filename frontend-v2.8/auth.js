@@ -13,7 +13,12 @@ class AuthManager {
             this.getCurrentUser().catch(() => {
                 // Если токен недействителен, очищаем
                 this.logout();
+                // Пытаемся восстановить гостевой режим
+                this.restoreGuest();
             });
+        } else {
+            // Если нет токена, пытаемся восстановить гостевой режим
+            this.restoreGuest();
         }
     }
     
@@ -252,10 +257,80 @@ class AuthManager {
     }
     
     /**
+     * Вход как гость (без регистрации)
+     */
+    async loginAsGuest() {
+        try {
+            // Генерируем случайный ID для гостя
+            const guestId = 'guest_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            
+            // Создаем временного пользователя-гостя
+            this.currentUser = {
+                player_id: guestId,
+                username: `Гость_${guestId.substring(6, 12)}`,
+                email: `${guestId}@guest.local`,
+                is_guest: true
+            };
+            
+            // Сохраняем информацию о госте в localStorage
+            localStorage.setItem('guest_id', guestId);
+            localStorage.setItem('guest_username', this.currentUser.username);
+            
+            // Очищаем токены (гость не использует токены)
+            this.accessToken = null;
+            this.refreshToken = null;
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            
+            return { success: true, user: this.currentUser };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+    
+    /**
+     * Проверка, является ли пользователь гостем
+     */
+    isGuest() {
+        return this.currentUser && this.currentUser.is_guest === true;
+    }
+    
+    /**
+     * Восстановление гостевого режима из localStorage
+     */
+    restoreGuest() {
+        const guestId = localStorage.getItem('guest_id');
+        const guestUsername = localStorage.getItem('guest_username');
+        
+        if (guestId && guestUsername) {
+            this.currentUser = {
+                player_id: guestId,
+                username: guestUsername,
+                email: `${guestId}@guest.local`,
+                is_guest: true
+            };
+            return true;
+        }
+        return false;
+    }
+    
+    /**
      * Получение токена для WebSocket соединений
      */
     getWebSocketToken() {
         return this.accessToken;
+    }
+    
+    /**
+     * Получение player_id для использования в игре
+     */
+    getPlayerId() {
+        if (this.currentUser) {
+            return this.currentUser.player_id;
+        }
+        // Если нет пользователя, генерируем временный ID
+        const tempId = 'temp_' + Math.random().toString(36).substring(2, 15);
+        return tempId;
     }
 }
 

@@ -27,6 +27,10 @@
                         <input type="password" id="login-password" required>
                     </div>
                     <button type="submit" class="auth-btn">Войти</button>
+                    <div class="guest-divider">
+                        <span>или</span>
+                    </div>
+                    <button type="button" class="auth-btn guest" id="login-as-guest">Войти как гость</button>
                     <div class="auth-link">
                         Нет аккаунта? <a href="#" id="show-register">Зарегистрироваться</a>
                     </div>
@@ -54,6 +58,10 @@
                         <input type="password" id="register-password" required minlength="6">
                     </div>
                     <button type="submit" class="auth-btn">Зарегистрироваться</button>
+                    <div class="guest-divider">
+                        <span>или</span>
+                    </div>
+                    <button type="button" class="auth-btn guest" id="register-as-guest">Войти как гость</button>
                     <div class="auth-link">
                         Уже есть аккаунт? <a href="#" id="show-login">Войти</a>
                     </div>
@@ -335,13 +343,23 @@
         // Инициализация аутентификации
         document.addEventListener('DOMContentLoaded', async () => {
             // Проверяем, авторизован ли пользователь
-            if (!authManager.isAuthenticated()) {
+            if (!authManager.isAuthenticated() && !authManager.isGuest()) {
                 document.getElementById('auth-screen').classList.remove('hidden');
                 document.getElementById('main-menu').classList.add('hidden');
             } else {
-                const user = await authManager.getCurrentUser();
+                // Показываем главное меню
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-menu').classList.remove('hidden');
+                
+                // Получаем информацию о пользователе
+                let user = authManager.currentUser;
+                if (!user && authManager.isAuthenticated()) {
+                    user = await authManager.getCurrentUser();
+                }
+                
                 if (user) {
-                    document.getElementById('user-name').textContent = user.username || user.email;
+                    const displayName = user.is_guest ? `${user.username} (Гость)` : (user.username || user.email);
+                    document.getElementById('user-name').textContent = displayName;
                 }
             }
             
@@ -379,6 +397,34 @@
                 } else {
                     const errorEl = document.getElementById('register-error');
                     errorEl.textContent = result.error;
+                    errorEl.classList.remove('hidden');
+                }
+            });
+            
+            // Обработчик входа как гость (из формы входа)
+            document.getElementById('login-as-guest').addEventListener('click', async () => {
+                const result = await authManager.loginAsGuest();
+                if (result.success) {
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('main-menu').classList.remove('hidden');
+                    document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
+                } else {
+                    const errorEl = document.getElementById('login-error');
+                    errorEl.textContent = result.error || 'Ошибка входа как гость';
+                    errorEl.classList.remove('hidden');
+                }
+            });
+            
+            // Обработчик входа как гость (из формы регистрации)
+            document.getElementById('register-as-guest').addEventListener('click', async () => {
+                const result = await authManager.loginAsGuest();
+                if (result.success) {
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('main-menu').classList.remove('hidden');
+                    document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
+                } else {
+                    const errorEl = document.getElementById('register-error');
+                    errorEl.textContent = result.error || 'Ошибка входа как гость';
                     errorEl.classList.remove('hidden');
                 }
             });
@@ -427,7 +473,14 @@
             
             // Выход
             document.getElementById('btn-logout').addEventListener('click', async () => {
-                await authManager.logout();
+                if (authManager.isGuest()) {
+                    // Для гостя просто очищаем данные
+                    authManager.currentUser = null;
+                    localStorage.removeItem('guest_id');
+                    localStorage.removeItem('guest_username');
+                } else {
+                    await authManager.logout();
+                }
                 document.getElementById('auth-screen').classList.remove('hidden');
                 document.getElementById('main-menu').classList.add('hidden');
             });

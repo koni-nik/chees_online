@@ -11,8 +11,8 @@ if (typeof authManager === 'undefined') {
 
 // Минимальная инициализация игры
 document.addEventListener('DOMContentLoaded', () => {
-    // Проверяем авторизацию перед инициализацией игры
-    if (typeof authManager !== 'undefined' && !authManager.isAuthenticated()) {
+    // Проверяем авторизацию или гостевой режим перед инициализацией игры
+    if (typeof authManager !== 'undefined' && !authManager.isAuthenticated() && !authManager.isGuest()) {
         console.log('Пользователь не авторизован. Игра будет доступна после входа.');
         return;
     }
@@ -103,10 +103,10 @@ function generateRoomId() {
 // Подключение к комнате
 function joinRoom(roomId) {
     // Получаем player_id из authManager
-    let playerId = 'guest_' + Math.random().toString(36).substring(2, 9);
+    let playerId = 'temp_' + Math.random().toString(36).substring(2, 15);
     
-    if (typeof authManager !== 'undefined' && authManager.currentUser) {
-        playerId = authManager.currentUser.player_id || authManager.currentUser.email?.split('@')[0] || playerId;
+    if (typeof authManager !== 'undefined') {
+        playerId = authManager.getPlayerId();
     }
     
     // Переходим к игре
