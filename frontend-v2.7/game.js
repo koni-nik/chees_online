@@ -379,7 +379,15 @@ class ChessGame {
         this.initBoard();
     }
     
-    generateId() { return Math.random().toString(36).substring(2, 10); }
+    generateId() { 
+        // Генерируем ID только из допустимых символов (буквы, цифры, дефисы, подчеркивания)
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+        let id = '';
+        for (let i = 0; i < 8; i++) {
+            id += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return id;
+    }
     
     // ============ РАСЧЁТ РАЗМЕРА ДОСКИ ============
     calculateBoardSize() {
@@ -1831,10 +1839,24 @@ class ChessGame {
     }
     
     connectWebSocket() {
-        if (this.ws) this.ws.close();
+        if (this.ws) {
+            try {
+                this.ws.close();
+            } catch (e) {
+                console.warn('[DEBUG] Error closing existing WebSocket:', e);
+            }
+        }
+        
+        // Проверяем, что roomId и playerId валидны
+        if (!this.roomId || !this.playerId) {
+            console.error('[DEBUG] Cannot connect: missing roomId or playerId', { roomId: this.roomId, playerId: this.playerId });
+            return;
+        }
         
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        this.ws = new WebSocket(`${protocol}//${window.location.host}/ws/${this.roomId}/${this.playerId}`);
+        const wsUrl = `${protocol}//${window.location.host}/ws/${this.roomId}/${this.playerId}`;
+        console.log(`[DEBUG] Connecting to WebSocket: ${wsUrl}`);
+        this.ws = new WebSocket(wsUrl);
         
         this.ws.onopen = () => {
             console.log(`[DEBUG] WebSocket: Connected to room ${this.roomId}, playerId=${this.playerId}`);
@@ -1847,24 +1869,59 @@ class ChessGame {
             setTimeout(() => this.hideSwitchersPanel(), 10);
         };
         
-        this.ws.onmessage = (e) => this.handleServerMessage(JSON.parse(e.data));
+        this.ws.onmessage = (e) => {
+            try {
+                const data = JSON.parse(e.data);
+                console.log('[DEBUG] WebSocket: Received message:', data.type, data);
+                this.handleServerMessage(data);
+            } catch (error) {
+                console.error('[DEBUG] WebSocket: Error parsing message:', error, e.data);
+            }
+        };
         
         this.ws.onclose = (event) => {
             console.log(`[DEBUG] WebSocket: Closed, code=${event.code}, reason=${event.reason || 'none'}, wasClean=${event.wasClean}`);
             this.updateConnectionStatus(false);
+            
+            // Если закрыто с ошибкой валидации, не пытаемся переподключаться
+            if (event.code === 4000) {
+                console.error(`[DEBUG] WebSocket: Connection rejected - ${event.reason}`);
+                const statusEl = document.getElementById('status');
+                if (statusEl) {
+                    statusEl.textContent = `Ошибка подключения: ${event.reason || 'Неверные параметры'}`;
+                }
+                // Генерируем новый playerId и пытаемся переподключиться
+                this.playerId = this.generateId();
+                console.log(`[DEBUG] Generated new playerId: ${this.playerId}`);
+                if (this.reconnectAttempts < this.maxReconnectAttempts) {
+                    setTimeout(() => this.connectWebSocket(), 1000);
+                }
+                return;
+            }
+            
             if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
                 console.log(`[DEBUG] WebSocket: Attempting reconnect ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts}`);
                 this.attemptReconnect();
             } else {
                 console.log(`[DEBUG] WebSocket: Max reconnects reached or not reconnecting`);
-                document.getElementById('status').textContent = 'Отключено';
+                const statusEl = document.getElementById('status');
+                if (statusEl) {
+                    statusEl.textContent = 'Отключено';
+                }
             }
         };
         
         this.ws.onerror = (error) => {
             console.error(`[DEBUG] WebSocket: Error occurred`, error);
             this.updateConnectionStatus(false);
-            document.getElementById('status').textContent = 'Ошибка подключения';
+            const statusEl = document.getElementById('status');
+            if (statusEl) {
+                statusEl.textContent = 'Ошибка подключения';
+            }
+            // Пытаемся переподключиться только если не было ошибки валидации
+            if (!this.isReconnecting && this.reconnectAttempts < this.maxReconnectAttempts) {
+                setTimeout(() => this.attemptReconnect(), 1000);
+            }
         };
     }
     
@@ -1884,6 +1941,12 @@ class ChessGame {
     }
     
     handleServerMessage(data) {
+        if (!data || !data.type) {
+            console.error('[DEBUG] Invalid message format:', data);
+            return;
+        }
+        
+        console.log(`[DEBUG] Handling message type: ${data.type}`);
         switch (data.type) {
             case 'init':
                 console.log(`[DEBUG] Init: Received init message, color=${data.color}, currentPlayer=${data.current_player}, playersCount=${data.players_count}`);
@@ -2028,11 +2091,131 @@ class ChessGame {
                 
             case 'undo_accepted':
                 this.addChatMessage(null, 'Отмена хода принята', true);
-                // Сервер отправит обновленное состояние доски
+                // Обновляем состояние доски
+                if (data.board) {
+                    this.board = data.board;
+                }
+                if (data.current_player) {
+                    this.currentPlayer = data.current_player;
+                }
+                if (data.move_history) {
+                    this.moveHistory = data.move_history || [];
+                    this.updateMoveHistoryDisplay();
+                }
+                this.selectedPiece = null;
+                this.validMoves = [];
+                this.validAttacks = [];
+                this.updateTurnIndicator();
+                this.draw();
                 break;
                 
             case 'undo_declined':
                 this.addChatMessage(null, 'Отмена хода отклонена', true);
+                break;
+                
+            case 'error':
+                console.error('[DEBUG] Server error:', data.message);
+                if (data.message) {
+                    this.addChatMessage(null, `Ошибка: ${data.message}`, true);
+                }
+                break;
+                
+            case 'rating_updated':
+                if (data.ratings) {
+                    this.playerRating = data.ratings.player_rating || this.playerRating;
+                    this.opponentRating = data.ratings.opponent_rating || this.opponentRating;
+                    localStorage.setItem('chess_rating', this.playerRating);
+                }
+                break;
+                
+            case 'player_joined':
+            case 'player_left':
+                this.updateStatus(data.players_count || 0);
+                if (data.type === 'player_joined') {
+                    this.addChatMessage(null, 'Противник подключился', true);
+                } else {
+                    this.addChatMessage(null, 'Противник отключился', true);
+                }
+                break;
+                
+            case 'rematch_started':
+                if (data.board) this.board = data.board;
+                if (data.current_player) this.currentPlayer = data.current_player;
+                if (data.colors) {
+                    // Обновляем цвет игрока если нужно
+                    for (const [pid, color] of Object.entries(data.colors)) {
+                        if (pid === this.playerId) {
+                            this.myColor = color;
+                            document.getElementById('my-color').textContent = color === 'white' ? 'Белые' : color === 'black' ? 'Чёрные' : 'Наблюдатель';
+                        }
+                    }
+                }
+                if (data.timers) this.timers = data.timers;
+                this.selectedPiece = null;
+                this.validMoves = [];
+                this.validAttacks = [];
+                this.moveHistory = [];
+                this.updateMoveHistoryDisplay();
+                this.updateTurnIndicator();
+                this.draw();
+                break;
+                
+            case 'time_control_updated':
+                if (data.timers) this.timers = data.timers;
+                if (data.increment !== undefined) {
+                    // Обновляем инкремент если нужно
+                }
+                if (data.delay !== undefined) {
+                    // Обновляем задержку если нужно
+                }
+                this.updateTimerDisplay();
+                break;
+                
+            case 'position_analysis':
+                console.log('[DEBUG] Position analysis received:', data);
+                // Обработка анализа позиции для v2.7
+                if (data.evaluation !== undefined) {
+                    this.setDevStatus(`Оценка: ${data.evaluation.toFixed(2)}`);
+                }
+                break;
+                
+            case 'pgn_exported':
+                console.log('[DEBUG] PGN exported:', data.pgn);
+                // Обработка экспортированного PGN для v2.7
+                if (data.pgn) {
+                    // Можно показать модальное окно с PGN или скопировать в буфер
+                    const pgnText = data.pgn;
+                    navigator.clipboard.writeText(pgnText).then(() => {
+                        this.addChatMessage(null, 'PGN скопирован в буфер обмена', true);
+                    }).catch(() => {
+                        console.log('PGN:', pgnText);
+                    });
+                }
+                break;
+                
+            case 'rating_info':
+                console.log('[DEBUG] Rating info received:', data);
+                if (data.rating !== undefined) {
+                    this.playerRating = data.rating;
+                    localStorage.setItem('chess_rating', this.playerRating);
+                }
+                // Можно обновить UI с рейтингом
+                break;
+                
+            case 'rematch_requested':
+                const rematchModal = document.getElementById('rematch-request-modal');
+                if (rematchModal) {
+                    rematchModal.classList.remove('hidden');
+                }
+                this.addChatMessage(null, 'Противник предлагает реванш', true);
+                break;
+                
+            case 'rematch_declined':
+                this.addChatMessage(null, 'Реванш отклонён', true);
+                break;
+                
+            default:
+                console.warn(`[DEBUG] Unknown message type: ${data.type}`, data);
                 break;
         }
     }
