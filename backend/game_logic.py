@@ -571,7 +571,11 @@ class ChessGame:
         Args:
             move_record: Запись хода из move_history
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         if not move_record:
+            logger.warning("Попытка отката пустого хода")
             return
         
         from_pos = tuple(move_record["from"])
@@ -584,6 +588,7 @@ class ChessGame:
         # Получаем фигуру, которая делала ход
         piece = self.board[to_pos[0]][to_pos[1]]
         if not piece:
+            logger.error(f"Не найдена фигура на позиции {to_pos} для отката хода")
             return
         
         # Откатываем превращение пешки
@@ -598,12 +603,18 @@ class ChessGame:
             if castling == "kingside":
                 # Возвращаем ладью
                 rook = self.board[5][y]
+                if rook is None:
+                    logger.error(f"Ладья не найдена на позиции (5, {y}) для отката рокировки")
+                    return
                 self.board[5][y] = None
                 self.board[7][y] = rook
                 rook.position = (7, y)
                 rook.moved = False
             else:  # queenside
                 rook = self.board[3][y]
+                if rook is None:
+                    logger.error(f"Ладья не найдена на позиции (3, {y}) для отката рокировки")
+                    return
                 self.board[3][y] = None
                 self.board[0][y] = rook
                 rook.position = (0, y)
@@ -617,7 +628,19 @@ class ChessGame:
         
         # Восстанавливаем захваченную фигуру
         if captured:
-            captured_type = PieceType[captured["type"].upper()]
+            # Правильный способ получения PieceType из строки
+            captured_type_str = captured["type"]  # "pawn", "rook", etc.
+            captured_type = None
+            # Ищем соответствующий PieceType по значению
+            for pt in PieceType:
+                if pt.value == captured_type_str:
+                    captured_type = pt
+                    break
+            
+            if captured_type is None:
+                logger.error(f"Неизвестный тип фигуры для восстановления: {captured_type_str}")
+                return
+            
             captured_piece = Piece(captured["color"], captured_type, to_pos)
             captured_piece.moved = captured.get("moved", False)
             
@@ -627,6 +650,7 @@ class ChessGame:
                 self.board[to_pos[0]][captured_y] = captured_piece
                 captured_piece.position = (to_pos[0], captured_y)
             else:
+                # to_pos уже освобождена выше, можно безопасно разместить фигуру
                 self.board[to_pos[0]][to_pos[1]] = captured_piece
         
         # Восстанавливаем en_passant_target (упрощённо - в реальности нужна полная история)
