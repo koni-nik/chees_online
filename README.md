@@ -30,7 +30,11 @@ chess-online/
 - **database.py**: Работа с SQLite (игроки, рейтинги, история игр)
 - **rating.py**: Система рейтинга Elo с персистентным хранением
 - **schemas.py**: Валидация всех WebSocket сообщений через Pydantic
-- **auth.py**: Базовая система аутентификации с токенами
+- **auth.py**: JWT-аутентификация с хешированием паролей (v2.8+)
+- **routes/**: HTTP endpoints (auth, game, tournament, matchmaking)
+- **services/**: Бизнес-логика (email, matchmaking)
+- **middleware/**: Промежуточное ПО (auth, rate limiting)
+- **handlers/**: Обработчики WebSocket сообщений
 
 #### Shared модули
 - **chess_engine.py**: Общий шахматный движок с оптимизированной проверкой шаха
@@ -45,7 +49,16 @@ chess-online/
 
 #### HTTP
 - `/` - Главная страница (frontend/index.html)
-- `/v2.5`, `/v2.6`, `/v2.7` - Различные версии frontend
+- `/v2.5`, `/v2.6`, `/v2.7`, `/v2.8` - Различные версии frontend
+- `/api/auth/*` - Endpoints аутентификации (v2.8+)
+  - `POST /api/auth/register` - Регистрация
+  - `POST /api/auth/login` - Вход
+  - `POST /api/auth/logout` - Выход
+  - `POST /api/auth/refresh` - Обновление токена
+  - `GET /api/auth/verify-email` - Верификация email
+  - `POST /api/auth/forgot-password` - Запрос сброса пароля
+  - `POST /api/auth/reset-password` - Сброс пароля
+  - `GET /api/auth/me` - Текущий пользователь
 
 ### Типы WebSocket сообщений
 
@@ -88,11 +101,23 @@ pytest test_rating.py -v
 ## База данных
 
 Используется SQLite для хранения:
-- **players**: Игроки и их рейтинги
+- **users**: Аккаунты пользователей (v2.8+)
+- **user_sessions**: JWT refresh токены (v2.8+)
+- **email_verification_tokens**: Токены верификации email (v2.8+)
+- **password_reset_tokens**: Токены сброса пароля (v2.8+)
+- **players**: Игроки и их рейтинги (связь с users через user_id в v2.8+)
 - **rating_history**: История изменения рейтингов
 - **games**: Завершенные игры
 
 База данных автоматически инициализируется при первом запуске.
+
+### Миграция к версии 2.8
+
+Для миграции существующих игроков к новой системе аккаунтов:
+```bash
+cd backend
+python migrations/migrate_to_v2_8.py
+```
 
 ## Логирование
 
@@ -102,9 +127,12 @@ pytest test_rating.py -v
 ## Безопасность
 
 - Валидация всех WebSocket сообщений через Pydantic
-- Базовая система аутентификации с токенами
-- Rate limiting для предотвращения спама
+- JWT-аутентификация с access и refresh токенами (v2.8+)
+- Хеширование паролей с bcrypt (v2.8+)
+- Rate limiting для auth endpoints (v2.8+)
+- Защита WebSocket соединений через JWT (v2.8+)
 - Санитизация входных данных
+- Верификация email (v2.8+)
 
 ## Производительность
 

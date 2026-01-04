@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Шахматы 2.8 Онлайн</title>
+    <link rel="stylesheet" href="/v2.8/static/style.css">
+    <link rel="stylesheet" href="/v2.8/static/auth.css">
+</head>
+<body>
+    <!-- Экран аутентификации -->
+    <div id="auth-screen" class="auth-screen hidden">
+        <div class="auth-container">
+            <h1 class="auth-title">Шахматы 2.8</h1>
+            <p class="auth-subtitle">Система аккаунтов</p>
+            
+            <!-- Форма входа -->
+            <div id="login-form" class="auth-form-container">
+                <form class="auth-form" id="login-form-element">
+                    <div id="login-error" class="auth-error hidden"></div>
+                    <div class="form-group">
+                        <label for="login-email">Email:</label>
+                        <input type="email" id="login-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="login-password">Пароль:</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="auth-btn">Войти</button>
+                    <div class="auth-link">
+                        Нет аккаунта? <a href="#" id="show-register">Зарегистрироваться</a>
+                    </div>
+                    <div class="auth-link">
+                        <a href="#" id="show-forgot-password">Забыли пароль?</a>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Форма регистрации -->
+            <div id="register-form" class="auth-form-container hidden">
+                <form class="auth-form" id="register-form-element">
+                    <div id="register-error" class="auth-error hidden"></div>
+                    <div id="register-success" class="auth-success hidden"></div>
+                    <div class="form-group">
+                        <label for="register-username">Имя пользователя:</label>
+                        <input type="text" id="register-username" required minlength="3" maxlength="50">
+                    </div>
+                    <div class="form-group">
+                        <label for="register-email">Email:</label>
+                        <input type="email" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="register-password">Пароль:</label>
+                        <input type="password" id="register-password" required minlength="6">
+                    </div>
+                    <button type="submit" class="auth-btn">Зарегистрироваться</button>
+                    <div class="auth-link">
+                        Уже есть аккаунт? <a href="#" id="show-login">Войти</a>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Форма восстановления пароля -->
+            <div id="forgot-password-form" class="auth-form-container hidden">
+                <form class="auth-form" id="forgot-password-form-element">
+                    <div id="forgot-error" class="auth-error hidden"></div>
+                    <div id="forgot-success" class="auth-success hidden"></div>
+                    <div class="form-group">
+                        <label for="forgot-email">Email:</label>
+                        <input type="email" id="forgot-email" required>
+                    </div>
+                    <button type="submit" class="auth-btn">Отправить ссылку</button>
+                    <div class="auth-link">
+                        <a href="#" id="back-to-login">Назад к входу</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Главное меню -->
+    <div id="main-menu" class="menu-screen">
+        <div class="menu-bg"></div>
+        <div class="menu-pieces"></div>
+        <div class="menu-content">
+            <h1 class="menu-title">Шахматы</h1>
+            <p class="menu-subtitle">Версия 2.8 Онлайн</p>
+            
+            <div class="user-info" id="user-info" style="text-align: center; margin-bottom: 1rem; color: white;">
+                <span id="user-name">Гость</span>
+                <button id="btn-logout" class="menu-btn secondary" style="margin-top: 0.5rem;">Выйти</button>
+            </div>
+            
+            <div class="menu-buttons">
+                <button class="menu-btn" id="btn-matchmaking">🎯 Найти соперника</button>
+                <button class="menu-btn" id="btn-online">Играть онлайн 1 на 1</button>
+                <button class="menu-btn" id="btn-local">Играть локально</button>
+                <button class="menu-btn" id="btn-stats">Статистика</button>
+                <button class="menu-btn" id="btn-tournaments">Турниры</button>
+            </div>
+            
+            <p class="menu-hint">D - панель разработчика | Ctrl+S - сохранить | Ctrl+A - анализ</p>
+        </div>
+    </div>
+    
+    <!-- Экран подключения к комнате -->
+    <div id="room-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Онлайн игра</h2>
+            
+            <div class="room-form">
+                <label>ID комнаты:</label>
+                <input type="text" id="room-input" placeholder="Введите или оставьте пустым">
+                <button class="menu-btn" id="btn-join">Войти в комнату</button>
+                <button class="menu-btn secondary" id="btn-create">Создать новую комнату</button>
+            </div>
+            
+            <button class="back-btn" id="btn-back-room">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Экран статистики -->
+    <div id="stats-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Статистика</h2>
+            
+            <div class="stats-cards">
+                <div class="stat-card">
+                    <span class="stat-label">Всего партий:</span>
+                    <span class="stat-value" id="stat-total">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед белых:</span>
+                    <span class="stat-value" id="stat-white">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Побед чёрных:</span>
+                    <span class="stat-value" id="stat-black">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-label">Ничьих:</span>
+                    <span class="stat-value" id="stat-draws">0</span>
+                </div>
+            </div>
+            
+            <!-- Рейтинг -->
+            <div class="rating-display">
+                <div class="rating-card">
+                    <span class="rating-label">Рейтинг:</span>
+                    <span class="rating-value" id="rating-value">1200</span>
+                    <span class="rating-rank" id="rating-rank">Новичок</span>
+                </div>
+            </div>
+            
+            <div class="stats-bar">
+                <div class="bar-white" id="bar-white"></div>
+                <div class="bar-black" id="bar-black"></div>
+            </div>
+            <p class="stats-percent" id="stats-percent"></p>
+            
+            <button class="back-btn" id="btn-back-stats">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Экран турниров -->
+    <div id="tournament-screen" class="menu-screen hidden">
+        <div class="menu-bg"></div>
+        <div class="menu-content">
+            <h2 class="screen-title">Турнирные комнаты</h2>
+            
+            <!-- Форма создания комнаты -->
+            <div class="tournament-create-form">
+                <h3>Создать новую комнату</h3>
+                <div class="form-group">
+                    <label for="tournament-room-name">Название комнаты:</label>
+                    <input type="text" id="tournament-room-name" placeholder="Введите название" maxlength="100">
+                </div>
+                <div class="form-group">
+                    <label for="tournament-start-time">Время старта (МСК):</label>
+                    <input type="datetime-local" id="tournament-start-time">
+                </div>
+                <button class="menu-btn" id="btn-create-tournament-room">Создать комнату</button>
+            </div>
+            
+            <!-- Список комнат -->
+            <div class="tournament-rooms-list">
+                <h3>Доступные комнаты</h3>
+                <button class="menu-btn secondary" id="btn-refresh-rooms">Обновить список</button>
+                <div id="tournament-rooms-container">
+                    <p class="loading-text">Загрузка...</p>
+                </div>
+            </div>
+            
+            <button class="back-btn" id="btn-back-tournament">← Назад</button>
+        </div>
+    </div>
+    
+    <!-- Игровой экран -->
+    <div id="game-screen" class="hidden">
+        <div class="container">
+            <header>
+                <h1>♔ Шахматы 2.8 Онлайн</h1>
+            </header>
+            
+            <div class="game-wrapper">
+                <div class="board-container">
+                    <canvas id="board"></canvas>
+                    <canvas id="animation-layer"></canvas>
+                </div>
+                
+                <aside class="sidebar">
+                    <div class="player-info opponent">
+                        <div class="player-avatar">♚</div>
+                        <div class="player-details">
+                            <span class="player-name">Противник</span>
+                            <span class="player-color">Чёрные</span>
+                            <span class="player-rating" id="opponent-rating"></span>
+                        </div>
+                        <div class="player-timer" id="timer-black">10:00</div>
+                    </div>
+                    
+                    <div class="game-status">
+                        <div id="status">Ожидание игрока...</div>
+                        <div id="turn-indicator" class="turn white">Ход белых</div>
+                    </div>
+                    
+                    <div class="player-info self">
+                        <div class="player-avatar">♔</div>
+                        <div class="player-details">
+                            <span class="player-name">Вы</span>
+                            <span class="player-color" id="my-color">-</span>
+                            <span class="player-rating" id="my-rating"></span>
+                        </div>
+                        <div class="player-timer" id="timer-white">10:00</div>
+                    </div>
+                    
+                    <!-- Панель анализа -->
+                    <div class="analysis-panel">
+                        <div class="analysis-header" id="analysis-toggle">
+                            <span>Анализ позиции</span>
+                            <span class="analysis-toggle">▼</span>
+                        </div>
+                        <div class="analysis-body" id="analysis-body">
+                            <div class="analysis-evaluation" id="position-eval">0.0</div>
+                            <div class="analysis-threats" id="analysis-threats"></div>
+                        </div>
+                    </div>
+                    
+                    <div class="move-history">
+                        <div class="move-history-title">История ходов</div>
+                        <div class="move-history-list" id="move-history-list"></div>
+                    </div>
+                    
+                    <div class="controls">
+                        <button id="offer-draw" class="btn btn-secondary">Предложить ничью</button>
+                        <button id="resign" class="btn btn-danger">Сдаться</button>
+                        <button id="btn-undo" class="btn btn-secondary">Отменить ход</button>
+                        <button id="btn-flip" class="btn btn-secondary">⟳ Перевернуть</button>
+                        <button id="btn-export-pgn" class="btn btn-secondary">Экспорт PGN</button>
+                        <button id="btn-to-menu" class="btn btn-secondary">В меню</button>
+                    </div>
+                    
+                    <div class="room-info-display">
+                        <label>Комната:</label>
+                        <div class="room-id-row">
+                            <span id="current-room">-</span>
+                            <button class="copy-btn" id="copy-room-btn">Копировать</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Чат -->
+                    <div class="chat-container" id="chat-container">
+                        <div class="chat-header" id="chat-toggle">
+                            <span>Чат</span>
+                            <span class="chat-toggle">▼</span>
+                        </div>
+                        <div class="chat-body" id="chat-body">
+                            <div class="chat-messages" id="chat-messages"></div>
+                            <div class="chat-input-row">
+                                <input type="text" class="chat-input" id="chat-input" placeholder="Сообщение...">
+                                <button class="chat-send" id="chat-send">→</button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="hints">
+                        D - панель разработчика<br>
+                        ЛКМ - ход, ПКМ - атака (в Move Board)
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Панель разработчика и другие элементы из v2.7 -->
+    <!-- (Скопированы из frontend-v2.7/index.html для экономии места) -->
+    <div id="dev-panel" class="dev-panel">
+        <div class="dev-panel-header">
+            <h3>Developer Panel</h3>
+            <button class="dev-panel-close" id="dev-close">×</button>
+        </div>
+        <div class="dev-panel-content">
+            <div class="dev-section">
+                <h4>Таймеры</h4>
+                <div class="dev-row">
+                    <label>Белые (мин):</label>
+                    <input type="number" id="white-time" value="10" min="1" max="60">
+                </div>
+                <div class="dev-row">
+                    <label>Чёрные (мин):</label>
+                    <input type="number" id="black-time" value="10" min="1" max="60">
+                </div>
+                <button class="dev-btn dev-btn-apply" id="apply-time">Apply Time</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Переключатель версий -->
+    <div class="switchers-panel">
+        <div class="switcher-group">
+            <span class="switcher-label">Версия:</span>
+            <a href="/">2.4</a>
+            <a href="/v2.5">2.5</a>
+            <a href="/v2.6">2.6</a>
+            <a href="/v2.7">2.7</a>
+            <a href="/v2.8" class="active">2.8</a>
+        </div>
+    </div>
+    
+    <script src="/v2.8/auth.js"></script>
+    <script src="/v2.8/game.js"></script>
+    <script>
+        // Инициализация аутентификации
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Проверяем, авторизован ли пользователь
+            if (!authManager.isAuthenticated()) {
+                document.getElementById('auth-screen').classList.remove('hidden');
+                document.getElementById('main-menu').classList.add('hidden');
+            } else {
+                const user = await authManager.getCurrentUser();
+                if (user) {
+                    document.getElementById('user-name').textContent = user.username || user.email;
+                }
+            }
+            
+            // Обработчики форм
+            document.getElementById('login-form-element').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('login-email').value;
+                const password = document.getElementById('login-password').value;
+                
+                const result = await authManager.login(email, password);
+                if (result.success) {
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('main-menu').classList.remove('hidden');
+                    document.getElementById('user-name').textContent = result.user.username || result.user.email;
+                } else {
+                    const errorEl = document.getElementById('login-error');
+                    errorEl.textContent = result.error;
+                    errorEl.classList.remove('hidden');
+                }
+            });
+            
+            document.getElementById('register-form-element').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const username = document.getElementById('register-username').value;
+                const email = document.getElementById('register-email').value;
+                const password = document.getElementById('register-password').value;
+                
+                const result = await authManager.register(username, email, password);
+                if (result.success) {
+                    document.getElementById('register-success').textContent = 'Регистрация успешна! Проверьте email для подтверждения.';
+                    document.getElementById('register-success').classList.remove('hidden');
+                    setTimeout(() => {
+                        document.getElementById('show-login').click();
+                    }, 2000);
+                } else {
+                    const errorEl = document.getElementById('register-error');
+                    errorEl.textContent = result.error;
+                    errorEl.classList.remove('hidden');
+                }
+            });
+            
+            document.getElementById('forgot-password-form-element').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const email = document.getElementById('forgot-email').value;
+                
+                const result = await authManager.forgotPassword(email);
+                if (result.success) {
+                    document.getElementById('forgot-success').textContent = 'Ссылка для сброса пароля отправлена на email.';
+                    document.getElementById('forgot-success').classList.remove('hidden');
+                } else {
+                    const errorEl = document.getElementById('forgot-error');
+                    errorEl.textContent = result.error;
+                    errorEl.classList.remove('hidden');
+                }
+            });
+            
+            // Переключение между формами
+            document.getElementById('show-register').addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('login-form').classList.add('hidden');
+                document.getElementById('register-form').classList.remove('hidden');
+                document.getElementById('forgot-password-form').classList.add('hidden');
+            });
+            
+            document.getElementById('show-login').addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('register-form').classList.add('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+                document.getElementById('forgot-password-form').classList.add('hidden');
+            });
+            
+            document.getElementById('show-forgot-password').addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('login-form').classList.add('hidden');
+                document.getElementById('forgot-password-form').classList.remove('hidden');
+            });
+            
+            document.getElementById('back-to-login').addEventListener('click', (e) => {
+                e.preventDefault();
+                document.getElementById('forgot-password-form').classList.add('hidden');
+                document.getElementById('login-form').classList.remove('hidden');
+            });
+            
+            // Выход
+            document.getElementById('btn-logout').addEventListener('click', async () => {
+                await authManager.logout();
+                document.getElementById('auth-screen').classList.remove('hidden');
+                document.getElementById('main-menu').classList.add('hidden');
+            });
+            
+            // Проверка токена верификации в URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const verifyToken = urlParams.get('verify_token');
+            if (verifyToken) {
+                const result = await authManager.verifyEmail(verifyToken);
+                if (result.success) {
+                    alert('Email успешно подтверждён!');
+                } else {
+                    alert('Ошибка подтверждения email: ' + result.error);
+                }
+            }
+            
+            // Проверка токена сброса пароля в URL
+            const resetToken = urlParams.get('reset_token');
+            if (resetToken) {
+                // Показываем форму сброса пароля
+                const newPassword = prompt('Введите новый пароль:');
+                if (newPassword) {
+                    const result = await authManager.resetPassword(resetToken, newPassword);
+                    if (result.success) {
+                        alert('Пароль успешно изменён!');
+                    } else {
+                        alert('Ошибка сброса пароля: ' + result.error);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>
+
