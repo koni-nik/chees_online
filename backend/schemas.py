@@ -3,6 +3,7 @@ Pydantic схемы для валидации данных WebSocket сообщ�
 """
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from typing import List, Optional
+import re
 
 
 class Position(BaseModel):
@@ -167,6 +168,33 @@ class CreateTournamentRoomRequest(BaseModel):
 
 class JoinTournamentRoomRequest(BaseModel):
     """Запрос на присоединение к турнирной комнате."""
-    player_id: str = Field(..., min_length=1, description="ID игрока")
+    player_id: str = Field(..., min_length=1, max_length=50, description="ID игрока")
     role: Optional[str] = Field(None, pattern="^(player|spectator)$", description="Роль: player или spectator")
+    
+    @field_validator('player_id')
+    @classmethod
+    def validate_player_id(cls, v):
+        """Валидация player_id для безопасности."""
+        if not re.match(r'^[a-zA-Z0-9_-]+$', v):
+            raise ValueError("player_id может содержать только буквы, цифры, дефисы и подчеркивания")
+        return v
+
+
+# Валидаторы для path параметров
+def validate_player_id(player_id: str) -> str:
+    """Валидация player_id из path параметра."""
+    if not player_id or len(player_id) > 50:
+        raise ValueError("Некорректный player_id")
+    if not re.match(r'^[a-zA-Z0-9_-]+$', player_id):
+        raise ValueError("player_id может содержать только буквы, цифры, дефисы и подчеркивания")
+    return player_id
+
+
+def validate_room_id(room_id: str) -> str:
+    """Валидация room_id из path параметра."""
+    if not room_id or len(room_id) > 50:
+        raise ValueError("Некорректный room_id")
+    if not re.match(r'^[a-zA-Z0-9_-]+$', room_id):
+        raise ValueError("room_id может содержать только буквы, цифры, дефисы и подчеркивания")
+    return room_id
 
