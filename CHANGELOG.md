@@ -1,3 +1,58 @@
+# Changelog - История изменений
+
+## Версия 2.8 - Система аккаунтов и улучшения ⭐
+
+### Новая функциональность
+
+1. **Система аккаунтов**
+   - Регистрация и вход с email/password
+   - JWT-аутентификация для HTTP и WebSocket endpoints
+   - Хеширование паролей с использованием bcrypt
+   - Верификация email для новых аккаунтов
+   - Восстановление пароля через email
+   - Профили пользователей (username, email, created_at, last_login)
+
+2. **База данных**
+   - Новая таблица `users` для хранения аккаунтов
+   - Таблицы `user_sessions`, `email_verification_tokens`, `password_reset_tokens`
+   - Связь между `users` и `players` через `user_id`
+   - Миграция существующих игроков в систему аккаунтов
+
+3. **Безопасность**
+   - Rate limiting для auth endpoints (slowapi)
+   - JWT токены (access + refresh)
+   - Защита WebSocket соединений через JWT
+   - Middleware для аутентификации
+
+4. **Производительность**
+   - Кэширование рейтингов в памяти (cachetools.TTLCache)
+   - Оптимизированный matchmaking сервис
+
+5. **Рефакторинг backend**
+   - Модульная структура: `routes/`, `services/`, `middleware/`, `handlers/`
+   - Вынесена логика matchmaking в `services/matchmaking_service.py`
+   - Обработчики WebSocket в `handlers/websocket_handler.py`
+   - Auth endpoints в `routes/auth.py`
+
+6. **Frontend v2.8**
+   - Новый интерфейс аутентификации (login/register)
+   - Интеграция с JWT токенами
+   - Управление сессиями
+   - Формы верификации email и восстановления пароля
+
+### Технические детали
+
+- **Новые зависимости**: `bcrypt`, `python-jose[cryptography]`, `aiosmtplib`, `slowapi`, `cachetools`
+- **Новые модули**: `backend/routes/auth.py`, `backend/services/email_service.py`, `backend/services/matchmaking_service.py`, `backend/middleware/auth_middleware.py`, `backend/middleware/rate_limit.py`, `backend/handlers/websocket_handler.py`
+- **Миграция**: `backend/migrations/migrate_to_v2_8.py` для переноса существующих игроков
+
+### Обратная совместимость
+
+- Старые версии frontend (v2.5, v2.6, v2.7) продолжают работать без аутентификации
+- Существующие `player_id` мигрируются автоматически в guest аккаунты
+
+---
+
 # Changelog - Исправления кода
 
 ## Критичные исправления безопасности ✅
