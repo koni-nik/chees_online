@@ -641,6 +641,11 @@ class ChessGame:
             # Если данных нет, сохраняем текущее состояние
             piece.moved = piece.moved
         
+        # Определяем, какой игрок делал отменяемый ход по цвету фигуры
+        # Если фигура белая, то ход делал белый, и current_player должен стать "white"
+        # Если фигура черная, то ход делал черный, и current_player должен стать "black"
+        moved_player_color = piece.color
+        
         # Восстанавливаем захваченную фигуру
         if captured:
             # Правильный способ получения PieceType из строки
@@ -672,8 +677,9 @@ class ChessGame:
         # Для упрощения просто сбрасываем
         self.en_passant_target = None
         
-        # Переключаем игрока обратно
-        self.current_player = "black" if self.current_player == "white" else "white"
+        # Переключаем игрока обратно на того, кто делал отменяемый ход
+        # После отмены хода, ход должен делать тот же игрок, который делал отменяемый ход
+        self.current_player = moved_player_color
         
         # Сбрасываем флаги окончания игры
         self.game_over = False
