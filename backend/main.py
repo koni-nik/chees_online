@@ -882,7 +882,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 
                 await connection_manager.send_to_player(room_id, player_id, {
                     "type": "valid_moves",
-                    "position": data["position"],
+                    "position": data.position,
                     "moves": moves["moves"],
                     "attacks": moves["attacks"]
                 })
