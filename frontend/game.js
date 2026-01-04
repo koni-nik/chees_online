@@ -58,7 +58,15 @@ class ChessGame {
         this.initBoard();
     }
     
-    generateId() { return Math.random().toString(36).substring(2, 10); }
+    generateId() { 
+        // Генерируем ID только из допустимых символов (буквы, цифры, дефисы, подчеркивания)
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+        let id = '';
+        for (let i = 0; i < 8; i++) {
+            id += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return id;
+    }
     
     // ============ СОХРАНЕНИЕ/ЗАГРУЗКА ============
     loadStats() {
