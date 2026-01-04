@@ -154,8 +154,17 @@ class PositionAnalyzer:
         # Проверяем шах
         if king_pos:
             opponent_color = "black" if color == "white" else "white"
-            # Упрощённая проверка (в реальности нужна полная проверка)
-            threats["in_check"] = False  # TODO: реализовать проверку шаха
+            # Используем метод из ChessRules для проверки шаха
+            from shared.chess_engine import ChessRules, ChessPiece, PieceType
+            # Преобразуем доску в формат для ChessRules
+            chess_board = [[None for _ in range(8)] for _ in range(8)]
+            for x in range(8):
+                for y in range(8):
+                    piece = board[x][y]
+                    if piece:
+                        chess_board[x][y] = ChessPiece(piece.color, piece.type, piece.position)
+                        chess_board[x][y].moved = piece.moved
+            threats["in_check"] = ChessRules.is_in_check(color, chess_board)
         
         # Материальный баланс
         material = 0

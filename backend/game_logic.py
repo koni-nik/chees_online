@@ -563,4 +563,104 @@ class ChessGame:
             "promotion": promotion,
             "en_passant_target": self.en_passant_target
         }
+    
+    def undo_move(self, move_record: dict):
+        """
+        Откатывает последний ход на основе записи из истории.
+        
+        Args:
+            move_record: Запись хода из move_history
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        if not move_record:
+            logger.warning("Попытка отката пустого хода")
+            return
+        
+        from_pos = tuple(move_record["from"])
+        to_pos = tuple(move_record["to"])
+        captured = move_record.get("captured")
+        castling = move_record.get("castling")
+        en_passant = move_record.get("en_passant", False)
+        promotion = move_record.get("promotion")
+        
+        # Получаем фигуру, которая делала ход
+        piece = self.board[to_pos[0]][to_pos[1]]
+        if not piece:
+            logger.error(f"Не найдена фигура на позиции {to_pos} для отката хода")
+            return
+        
+        # Откатываем превращение пешки
+        if promotion:
+            # Восстанавливаем пешку
+            self.board[to_pos[0]][to_pos[1]] = Piece(piece.color, PieceType.PAWN, to_pos)
+            piece = self.board[to_pos[0]][to_pos[1]]
+        
+        # Откатываем рокировку
+        if castling:
+            y = from_pos[1]
+            if castling == "kingside":
+                # Возвращаем ладью
+                rook = self.board[5][y]
+                if rook is None:
+                    logger.error(f"Ладья не найдена на позиции (5, {y}) для отката рокировки")
+                    return
+                self.board[5][y] = None
+                self.board[7][y] = rook
+                rook.position = (7, y)
+                rook.moved = False
+            else:  # queenside
+                rook = self.board[3][y]
+                if rook is None:
+                    logger.error(f"Ладья не найдена на позиции (3, {y}) для отката рокировки")
+                    return
+                self.board[3][y] = None
+                self.board[0][y] = rook
+                rook.position = (0, y)
+                rook.moved = False
+        
+        # Возвращаем фигуру на исходную позицию
+        self.board[to_pos[0]][to_pos[1]] = None
+        self.board[from_pos[0]][from_pos[1]] = piece
+        piece.position = from_pos
+        piece.moved = move_record.get("piece", {}).get("moved", False)
+        
+        # Восстанавливаем захваченную фигуру
+        if captured:
+            # Правильный способ получения PieceType из строки
+            captured_type_str = captured["type"]  # "pawn", "rook", etc.
+            captured_type = None
+            # Ищем соответствующий PieceType по значению
+            for pt in PieceType:
+                if pt.value == captured_type_str:
+                    captured_type = pt
+                    break
+            
+            if captured_type is None:
+                logger.error(f"Неизвестный тип фигуры для восстановления: {captured_type_str}")
+                return
+            
+            captured_piece = Piece(captured["color"], captured_type, to_pos)
+            captured_piece.moved = captured.get("moved", False)
+            
+            # Для взятия на проходе восстанавливаем пешку в другом месте
+            if en_passant:
+                captured_y = to_pos[1] + (1 if piece.color == "white" else -1)
+                self.board[to_pos[0]][captured_y] = captured_piece
+                captured_piece.position = (to_pos[0], captured_y)
+            else:
+                # to_pos уже освобождена выше, можно безопасно разместить фигуру
+                self.board[to_pos[0]][to_pos[1]] = captured_piece
+        
+        # Восстанавливаем en_passant_target (упрощённо - в реальности нужна полная история)
+        # Для упрощения просто сбрасываем
+        self.en_passant_target = None
+        
+        # Переключаем игрока обратно
+        self.current_player = "black" if self.current_player == "white" else "white"
+        
+        # Сбрасываем флаги окончания игры
+        self.game_over = False
+        self.winner = None
 

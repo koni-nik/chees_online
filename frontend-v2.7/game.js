@@ -1981,9 +1981,21 @@ class ChessGame {
                 break;
                 
             case 'valid_moves':
-                this.validMoves = data.moves;
-                this.validAttacks = data.attacks;
-                this.draw();
+                // Проверяем, что позиция соответствует выбранной фигуре
+                if (this.selectedPiece && data.position) {
+                    const [sx, sy] = this.selectedPiece;
+                    const [px, py] = data.position;
+                    if (sx === px && sy === py) {
+                        this.validMoves = data.moves || [];
+                        this.validAttacks = data.attacks || [];
+                        console.log(`[DEBUG] Valid moves received: ${this.validMoves.length} moves, ${this.validAttacks.length} attacks`);
+                        this.draw();
+                    }
+                } else {
+                    this.validMoves = data.moves || [];
+                    this.validAttacks = data.attacks || [];
+                    this.draw();
+                }
                 break;
                 
             case 'game_over':
@@ -2158,11 +2170,13 @@ class ChessGame {
             pieceType: piece?.type, 
             pieceColor: piece?.color,
             currentPlayer: this.currentPlayer,
+            myColor: this.myColor,
             isLocalGame: this.isLocalGame,
-            canDrag: piece && piece.color === this.currentPlayer && this.isLocalGame
+            canDrag: piece && piece.color === this.currentPlayer && this.isLocalGame,
+            canSelect: piece && piece.color === this.myColor && !this.isLocalGame
         });
         
-        // Начинаем перетаскивание только если это фигура текущего игрока
+        // Для локальной игры - перетаскивание
         if (piece && piece.color === this.currentPlayer && this.isLocalGame) {
             this.dragging = true;
             this.dragPiece = piece;
@@ -2184,8 +2198,19 @@ class ChessGame {
             });
             
             this.draw();
+        } 
+        // Для онлайн игры - выбор фигуры (без перетаскивания)
+        else if (!this.isLocalGame && piece && piece.color === this.myColor && this.myColor === this.currentPlayer) {
+            this.selectedPiece = [x, y];
+            // Запрашиваем допустимые ходы через WebSocket
+            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+                this.ws.send(JSON.stringify({ type: 'get_valid_moves', position: [x, y] }));
+                document.getElementById('selected-piece-info').textContent = `${piece.color === 'white' ? 'Белая' : 'Чёрная'} ${this.getPieceNameRu(piece.type)}`;
+            }
+            this.draw();
+            console.log('[DEBUG] Piece selected for online game:', { x, y, piece: piece.type });
         } else {
-            console.log('[DEBUG] Drag not started - conditions not met');
+            console.log('[DEBUG] Drag/Select not started - conditions not met');
         }
     }
     
@@ -2679,18 +2704,42 @@ class ChessGame {
         console.log(`[DEBUG] Move: Processing click at (${x}, ${y}), myColor=${this.myColor}, currentPlayer=${this.currentPlayer}`);
         const clickedPiece = this.board[x][y];
         
+        // Если уже выбрана фигура, проверяем можно ли сделать ход
         if (this.selectedPiece) {
-            const isValid = this.validMoves.some(m => m[0] === x && m[1] === y) || this.validAttacks.some(a => a[0] === x && a[1] === y);
+            const [sx, sy] = this.selectedPiece;
+            const isValid = this.validMoves.some(m => m[0] === x && m[1] === y) || 
+                          this.validAttacks.some(a => a[0] === x && a[1] === y);
+            
             if (isValid) {
+                // Делаем ход
                 this.ws.send(JSON.stringify({ type: 'move', from: this.selectedPiece, to: [x, y] }));
+                // Сбрасываем выбор после хода
+                this.selectedPiece = null;
+                this.validMoves = [];
+                this.validAttacks = [];
+                this.draw();
+                return;
+            } else if (clickedPiece && clickedPiece.color === this.myColor && (sx !== x || sy !== y)) {
+                // Если кликнули на другую свою фигуру, выбираем её
+                this.selectedPiece = [x, y];
+                this.ws.send(JSON.stringify({ type: 'get_valid_moves', position: [x, y] }));
+                document.getElementById('selected-piece-info').textContent = `${clickedPiece.color === 'white' ? 'Белая' : 'Чёрная'} ${this.getPieceNameRu(clickedPiece.type)}`;
+                this.draw();
+                return;
+            } else {
+                // Кликнули на пустую клетку или чужую фигуру - снимаем выбор
+                this.deselectPiece();
+                this.draw();
                 return;
             }
         }
         
+        // Если фигура не выбрана, выбираем свою фигуру
         if (clickedPiece && clickedPiece.color === this.myColor) {
             this.selectedPiece = [x, y];
             this.ws.send(JSON.stringify({ type: 'get_valid_moves', position: [x, y] }));
             document.getElementById('selected-piece-info').textContent = `${clickedPiece.color === 'white' ? 'Белая' : 'Чёрная'} ${this.getPieceNameRu(clickedPiece.type)}`;
+            this.draw();
         } else {
             this.deselectPiece();
             this.draw();

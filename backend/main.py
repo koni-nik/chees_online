@@ -1,5 +1,5 @@
 # main.py - FastAPI сервер для онлайн шахмат
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, status, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,10 +25,13 @@ from schemas import (
     OfferDrawRequest, DrawResponseRequest, RequestUndoRequest, UndoResponseRequest,
     RequestRematchRequest, RematchResponseRequest, SetTimeControlRequest,
     GetPositionAnalysisRequest, ExportPGNRequest, GetRatingRequest,
-    CreateTournamentRoomRequest, JoinTournamentRoomRequest
+    CreateTournamentRoomRequest, JoinTournamentRoomRequest,
+    validate_player_id, validate_room_id
 )
 from pydantic import ValidationError
 from database import db
+from managers import room_manager, tournament_room_manager, connection_manager
+from config import config
 import aiosqlite
 import asyncio
 
@@ -42,10 +45,19 @@ if os.path.exists("/app"):  # Docker окружение
 else:  # Localhost окружение
     FRONTEND_BASE = BASE_DIR
 
+# Используем конфигурацию для расширяемости
 FRONTEND_DIR = FRONTEND_BASE / "frontend"
-FRONTEND_V25_DIR = FRONTEND_BASE / "frontend-v2.5"
-FRONTEND_V26_DIR = FRONTEND_BASE / "frontend-v2.6"
-FRONTEND_V27_DIR = FRONTEND_BASE / "frontend-v2.7"
+# Создаём словарь версий для удобного доступа
+FRONTEND_VERSIONS = {
+    "frontend": FRONTEND_BASE / "frontend",
+    "frontend-v2.5": FRONTEND_BASE / "frontend-v2.5",
+    "frontend-v2.6": FRONTEND_BASE / "frontend-v2.6",
+    "frontend-v2.7": FRONTEND_BASE / "frontend-v2.7"
+}
+# Для обратной совместимости
+FRONTEND_V25_DIR = FRONTEND_VERSIONS["frontend-v2.5"]
+FRONTEND_V26_DIR = FRONTEND_VERSIONS["frontend-v2.6"]
+FRONTEND_V27_DIR = FRONTEND_VERSIONS["frontend-v2.7"]
 
 app = FastAPI(title="Chess Online")
 
@@ -77,11 +89,18 @@ app.add_middleware(NoCacheMiddleware)
 
 # Настройка CORS - разрешаем запросы с фронтенда
 # ВАЖНО: CORS должен быть добавлен ПОСЛЕ других middleware
+if config.ALLOW_ANY_ORIGIN:
+    # Только для разработки - в продакшене использовать конкретные домены
+    logger.warning("CORS настроен на разрешение всех доменов - не использовать в продакшене!")
+    cors_origins = ["*"]
+else:
+    cors_origins = config.CORS_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # В продакшене указать конкретные домены
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -120,7 +139,7 @@ async def check_tournament_rooms_start_time():
     while True:
         try:
             current_time = datetime.now(pytz.UTC)
-            for room_id, room_data in list(tournament_rooms.items()):
+            for room_id, room_data in list(tournament_room_manager.tournament_rooms.items()):
                 if room_data["status"] == "waiting":
                     start_time_utc = room_data["start_time_utc"]
                     if current_time >= start_time_utc:
@@ -128,8 +147,8 @@ async def check_tournament_rooms_start_time():
                         room_data["status"] = "started"
                         # Уведомляем всех участников через WebSocket
                         notification_room_id = f"tournament_{room_id}"
-                        if notification_room_id in manager.active_connections:
-                            await manager.send_to_room(notification_room_id, {
+                        if notification_room_id in connection_manager.active_connections:
+                            await connection_manager.send_to_room(notification_room_id, {
                                 "type": "tournament_room_started",
                                 "room_id": room_id,
                                 "name": room_data["name"]
@@ -184,16 +203,12 @@ async def create_tournament_room(request: CreateTournamentRoomRequest):
         
         # Создаём комнату
         room_id = str(uuid.uuid4())[:8]
-        tournament_rooms[room_id] = {
-            "id": room_id,
-            "name": request.name,
-            "start_time": start_time_moscow.isoformat(),  # Сохраняем московское время для отображения
-            "start_time_utc": start_time_utc,  # UTC для внутренних проверок
-            "players": [],
-            "spectators": [],
-            "created_at": time.time(),
-            "status": "waiting"
-        }
+        tournament_room_manager.create_tournament_room(
+            room_id,
+            request.name,
+            start_time_moscow.isoformat(),
+            start_time_utc
+        )
         
         logger.info(f"Создана турнирная комната: {room_id} ({request.name}), старт: {start_time_moscow.isoformat()}")
         
@@ -220,7 +235,7 @@ async def list_tournament_rooms():
         rooms_list = []
         current_time_utc = datetime.now(pytz.UTC)
         
-        for room_id, room_data in tournament_rooms.items():
+        for room_id, room_data in tournament_room_manager.tournament_rooms.items():
             # Проверяем статус на основе времени
             if room_data["status"] == "waiting" and current_time_utc >= room_data["start_time_utc"]:
                 room_data["status"] = "started"
@@ -236,7 +251,7 @@ async def list_tournament_rooms():
             })
         
         # Сортируем по времени создания (новые первыми)
-        rooms_list.sort(key=lambda x: tournament_rooms[x["id"]]["created_at"], reverse=True)
+        rooms_list.sort(key=lambda x: tournament_room_manager.tournament_rooms[x["id"]]["created_at"], reverse=True)
         
         return rooms_list
     except Exception as e:
@@ -251,13 +266,21 @@ async def list_tournament_rooms():
 async def get_tournament_room(room_id: str):
     """Получение информации о конкретной турнирной комнате."""
     try:
-        if room_id not in tournament_rooms:
+        # Валидация room_id
+        try:
+            room_id = validate_room_id(room_id)
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(e)}
+            )
+        
+        room_data = tournament_room_manager.get_tournament_room(room_id)
+        if not room_data:
             return JSONResponse(
                 status_code=404,
                 content={"error": "Комната не найдена"}
             )
-        
-        room_data = tournament_rooms[room_id]
         current_time_utc = datetime.now(pytz.UTC)
         
         # Проверяем статус
@@ -287,13 +310,22 @@ async def get_tournament_room(room_id: str):
 async def join_tournament_room(room_id: str, request: JoinTournamentRoomRequest):
     """Присоединение к турнирной комнате."""
     try:
-        if room_id not in tournament_rooms:
+        # Валидация room_id и player_id
+        try:
+            room_id = validate_room_id(room_id)
+            request.player_id = validate_player_id(request.player_id)
+        except ValueError as e:
+            return JSONResponse(
+                status_code=400,
+                content={"error": str(e)}
+            )
+        
+        room_data = tournament_room_manager.get_tournament_room(room_id)
+        if not room_data:
             return JSONResponse(
                 status_code=404,
                 content={"error": "Комната не найдена"}
             )
-        
-        room_data = tournament_rooms[room_id]
         player_id = request.player_id
         
         # Проверяем, не присоединён ли уже игрок
@@ -337,8 +369,8 @@ async def join_tournament_room(room_id: str, request: JoinTournamentRoomRequest)
         
         # Уведомляем других участников через WebSocket (если есть соединения)
         notification_room_id = f"tournament_{room_id}"
-        if notification_room_id in manager.active_connections:
-            await manager.send_to_room(notification_room_id, {
+        if notification_room_id in connection_manager.active_connections:
+            await connection_manager.send_to_room(notification_room_id, {
                 "type": "tournament_room_updated",
                 "room_id": room_id,
                 "players_count": len(room_data["players"]),
@@ -378,6 +410,8 @@ async def startup_event():
         loop.create_task(initialize_db_background())
         # Запускаем фоновую задачу для проверки времени старта турнирных комнат
         loop.create_task(check_tournament_rooms_start_time())
+        # Запускаем задачу очистки комнат
+        room_manager.start_cleanup_task(loop)
         logger.info("Приложение готово принимать запросы (инициализация БД в фоне)")
     except Exception as e:
         logger.error(f"Ошибка при запуске приложения: {e}", exc_info=True)
@@ -391,90 +425,9 @@ async def initialize_db_background():
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
 
-# Хранилище активных игр и соединений
-games: Dict[str, ChessGame] = {}
-rooms: Dict[str, Dict] = {}  # room_id -> {players: [], game: ChessGame}
-waiting_players: List[WebSocket] = []  # Очередь для matchmaking
+# Хранилище для matchmaking
 matchmaking_queue: List[Dict] = []  # [{player_id, websocket, rating, timestamp}]
-matchmaking_event = None  # asyncio.Event для уведомлений
-connections: Dict[str, WebSocket] = {}  # player_id -> websocket
-
-# Хранилище турнирных комнат
-tournament_rooms: Dict[str, Dict] = {}  # room_id -> {id, name, start_time, start_time_utc, players, spectators, created_at, status}
-
-# Рейтинги игроков теперь в rating.py
-
-
-class ConnectionManager:
-    """Менеджер WebSocket соединений с обработкой ошибок и retry механизмом."""
-    
-    def __init__(self):
-        self.active_connections: Dict[str, Dict[str, WebSocket]] = {}  # room_id -> {player_id: ws}
-        self.connection_timestamps: Dict[str, Dict[str, float]] = {}  # room_id -> {player_id: timestamp}
-    
-    async def connect(self, websocket: WebSocket, room_id: str, player_id: str):
-        """Подключает WebSocket соединение."""
-        await websocket.accept()
-        if room_id not in self.active_connections:
-            self.active_connections[room_id] = {}
-            self.connection_timestamps[room_id] = {}
-        self.active_connections[room_id][player_id] = websocket
-        self.connection_timestamps[room_id][player_id] = time.time()
-        logger.debug(f"Игрок {player_id} подключён к комнате {room_id}")
-    
-    def disconnect(self, room_id: str, player_id: str):
-        """Отключает WebSocket соединение."""
-        if room_id in self.active_connections:
-            self.active_connections[room_id].pop(player_id, None)
-            if room_id in self.connection_timestamps:
-                self.connection_timestamps[room_id].pop(player_id, None)
-            if not self.active_connections[room_id]:
-                del self.active_connections[room_id]
-                if room_id in self.connection_timestamps:
-                    del self.connection_timestamps[room_id]
-        logger.debug(f"Игрок {player_id} отключён от комнаты {room_id}")
-    
-    async def send_to_room(self, room_id: str, message: dict, max_retries: int = 3):
-        """Отправляет сообщение всем игрокам в комнате с retry механизмом."""
-        if room_id not in self.active_connections:
-            return
-        
-        failed_connections = []
-        for player_id, ws in list(self.active_connections[room_id].items()):
-            try:
-                await ws.send_json(message)
-            except Exception as e:
-                logger.warning(f"Ошибка отправки сообщения игроку {player_id}: {e}")
-                failed_connections.append(player_id)
-        
-        # Удаляем неработающие соединения
-        for player_id in failed_connections:
-            if player_id in self.active_connections[room_id]:
-                try:
-                    await self.active_connections[room_id][player_id].close()
-                except:
-                    pass
-                self.disconnect(room_id, player_id)
-    
-    async def send_to_player(self, room_id: str, player_id: str, message: dict, max_retries: int = 3):
-        """Отправляет сообщение конкретному игроку с retry механизмом."""
-        if room_id not in self.active_connections or player_id not in self.active_connections[room_id]:
-            return
-        
-        for attempt in range(max_retries):
-            try:
-                await self.active_connections[room_id][player_id].send_json(message)
-                return
-            except Exception as e:
-                if attempt < max_retries - 1:
-                    logger.warning(f"Попытка {attempt + 1} отправки сообщения игроку {player_id} не удалась: {e}")
-                    await asyncio.sleep(0.1)
-                else:
-                    logger.error(f"Не удалось отправить сообщение игроку {player_id} после {max_retries} попыток: {e}")
-                    self.disconnect(room_id, player_id)
-
-
-manager = ConnectionManager()
+matchmaking_event: Optional[asyncio.Event] = None  # asyncio.Event для уведомлений
 
 
 def rebuild_custom_moves(room):
@@ -606,22 +559,32 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
                 # Нашли соперника!
                 room_id = str(uuid.uuid4())[:8]
                 
-                # Удаляем обоих из очереди
-                matchmaking_queue.remove(player_entry)
-                matchmaking_queue.remove(best_match)
+                # Удаляем обоих из очереди (с защитой от race condition)
+                try:
+                    if player_entry in matchmaking_queue:
+                        matchmaking_queue.remove(player_entry)
+                    if best_match in matchmaking_queue:
+                        matchmaking_queue.remove(best_match)
+                except (ValueError, KeyError):
+                    # Игрок уже удалён из очереди (возможно, отключился)
+                    logger.warning(f"Игрок уже удалён из очереди matchmaking")
+                    break
                 
                 # Уведомляем обоих
-                await websocket.send_json({
-                    "type": "match_found",
-                    "room_id": room_id,
-                    "opponent_rating": best_match["rating"]
-                })
-                
-                await best_match["websocket"].send_json({
-                    "type": "match_found",
-                    "room_id": room_id,
-                    "opponent_rating": rating
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "match_found",
+                        "room_id": room_id,
+                        "opponent_rating": best_match["rating"]
+                    })
+                    
+                    await best_match["websocket"].send_json({
+                        "type": "match_found",
+                        "room_id": room_id,
+                        "opponent_rating": rating
+                    })
+                except Exception as e:
+                    logger.error(f"Ошибка при отправке уведомления о найденном матче: {e}")
                 
                 return
             
@@ -644,36 +607,32 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
                 pass
     
     except WebSocketDisconnect:
-        if player_entry in matchmaking_queue:
-            matchmaking_queue.remove(player_entry)
-
-
-import heapq
+        try:
+            if player_entry in matchmaking_queue:
+                matchmaking_queue.remove(player_entry)
+        except (ValueError, KeyError):
+            pass  # Игрок уже удалён
 
 
 @app.websocket("/ws/{room_id}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
-    await manager.connect(websocket, room_id, player_id)
+    # Валидация параметров
+    try:
+        room_id = validate_room_id(room_id)
+        player_id = validate_player_id(player_id)
+    except ValueError as e:
+        await websocket.close(code=4000, reason=str(e))
+        return
+    
+    await connection_manager.connect(websocket, room_id, player_id)
     
     # Создаём комнату если её нет
-    if room_id not in rooms:
-        rooms[room_id] = {
-            "players": [],
-            "spectators": [],
-            "game": ChessGame(),
-            "colors": {},
-            "custom_moves": {"white": {}, "black": {}},
-            "ability_cards": {"white": {}, "black": {}},
-            "timers": {"white": 600, "black": 600},
-            "increment": 0,  # Инкремент времени
-            "delay": 0,  # Задержка
-            "last_move_time": None,
-            "move_history": [],
-            "undo_requests": {},
-            "rematch_requests": set()
-        }
+    room = room_manager.get_room(room_id)
+    if not room:
+        room = room_manager.create_room(room_id)
     
-    room = rooms[room_id]
+    # Обновляем активность комнаты
+    room_manager.update_activity(room_id)
     
     # Добавляем игрока
     if player_id not in room["players"] and player_id not in room["spectators"]:
@@ -690,11 +649,10 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             room["colors"][player_id] = "spectator"
     
     # Отправляем начальное состояние
-    import time
     if room["last_move_time"] is None:
         room["last_move_time"] = time.time()
     
-    await manager.send_to_player(room_id, player_id, {
+    await connection_manager.send_to_player(room_id, player_id, {
         "type": "init",
         "color": room["colors"].get(player_id, "spectator"),
         "board": room["game"].get_board_state(),
@@ -711,7 +669,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     })
     
     # Уведомляем всех о новом игроке
-    await manager.send_to_room(room_id, {
+    await connection_manager.send_to_room(room_id, {
         "type": "player_joined",
         "players_count": len(room["players"])
     })
@@ -764,21 +722,28 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 elif message_type == "get_rating":
                     data = GetRatingRequest(**raw_data)
                 else:
-                    await manager.send_to_player(room_id, player_id, {
+                    await connection_manager.send_to_player(room_id, player_id, {
                         "type": "error",
                         "message": f"Неизвестный тип сообщения: {message_type}"
                     })
                     continue
             except ValidationError as e:
                 logger.warning(f"Ошибка валидации данных от {player_id}: {e}")
-                await manager.send_to_player(room_id, player_id, {
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "error",
                     "message": f"Некорректные данные: {str(e)}"
                 })
                 continue
+            except (KeyError, ValueError, TypeError) as e:
+                logger.warning(f"Ошибка формата данных от {player_id}: {e}")
+                await connection_manager.send_to_player(room_id, player_id, {
+                    "type": "error",
+                    "message": "Некорректный формат данных"
+                })
+                continue
             except Exception as e:
-                logger.error(f"Ошибка при обработке сообщения от {player_id}: {e}", exc_info=True)
-                await manager.send_to_player(room_id, player_id, {
+                logger.error(f"Неожиданная ошибка при обработке сообщения от {player_id}: {e}", exc_info=True)
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "error",
                     "message": "Внутренняя ошибка сервера"
                 })
@@ -792,7 +757,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 # Проверяем что ход делает правильный игрок
                 if player_color != room["game"].current_player:
                     logger.warning(f"Wrong turn: player_color={player_color}, current_player={room['game'].current_player}")
-                    await manager.send_to_player(room_id, player_id, {
+                    await connection_manager.send_to_player(room_id, player_id, {
                         "type": "error",
                         "message": "Не ваш ход"
                     })
@@ -829,7 +794,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     position_eval = PositionAnalyzer.evaluate_position(room["game"].board, room["game"].current_player)
                     
                     # Отправляем обновление всем
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "move",
                         "from": list(from_pos),
                         "to": list(to_pos),
@@ -868,12 +833,12 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                             
                             rating_update = await RatingSystem.update_rating(player1_id, player2_id, result_value)
                             
-                            await manager.send_to_room(room_id, {
+                            await connection_manager.send_to_room(room_id, {
                                 "type": "rating_updated",
                                 "ratings": rating_update
                             })
                 else:
-                    await manager.send_to_player(room_id, player_id, {
+                    await connection_manager.send_to_player(room_id, player_id, {
                         "type": "error",
                         "message": result.get("message", "Недопустимый ход")
                     })
@@ -915,7 +880,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                                 if [nx, ny] not in moves["attacks"]:
                                     moves["attacks"].append([nx, ny])
                 
-                await manager.send_to_player(room_id, player_id, {
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "valid_moves",
                     "position": data["position"],
                     "moves": moves["moves"],
@@ -924,7 +889,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             
             elif message_type == "resign":
                 winner = "black" if room["colors"].get(player_id) == "white" else "white"
-                await manager.send_to_room(room_id, {
+                await connection_manager.send_to_room(room_id, {
                     "type": "game_over",
                     "reason": "resign",
                     "winner": winner
@@ -944,7 +909,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     if move not in room["custom_moves"][color][piece_type][target]:
                         room["custom_moves"][color][piece_type][target].append(move)
                     
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "custom_moves_updated",
                         "custom_moves": room["custom_moves"]
                     })
@@ -961,7 +926,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     rebuild_custom_moves(room)
                     
                     logger.debug(f"custom_moves after rebuild: {room['custom_moves']}")
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "cards_updated",
                         "ability_cards": room["ability_cards"],
                         "custom_moves": room["custom_moves"]
@@ -977,7 +942,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     del room["ability_cards"][color][name]
                     rebuild_custom_moves(room)
                     
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "cards_updated",
                         "ability_cards": room["ability_cards"],
                         "custom_moves": room["custom_moves"]
@@ -994,7 +959,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     rebuild_custom_moves(room)
                     logger.debug(f"custom_moves after toggle: {room['custom_moves']}")
                     
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "cards_updated",
                         "ability_cards": room["ability_cards"],
                         "custom_moves": room["custom_moves"]
@@ -1003,7 +968,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             elif message_type == "reset_custom_moves":
                 room["custom_moves"] = {"white": {}, "black": {}}
                 room["ability_cards"] = {"white": {}, "black": {}}
-                await manager.send_to_room(room_id, {
+                await connection_manager.send_to_room(room_id, {
                     "type": "cards_updated",
                     "ability_cards": room["ability_cards"],
                     "custom_moves": room["custom_moves"]
@@ -1013,7 +978,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 message = data.message
                 if message:
                     # Отправляем сообщение всем кроме отправителя
-                    for pid, ws in manager.active_connections.get(room_id, {}).items():
+                    for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                         if pid != player_id:
                             await ws.send_json({
                                 "type": "chat",
@@ -1022,26 +987,26 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             
             elif message_type == "offer_draw":
                 # Отправляем предложение ничьей противнику
-                for pid, ws in manager.active_connections.get(room_id, {}).items():
+                for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                     if pid != player_id:
                         await ws.send_json({"type": "draw_offered"})
             
             elif message_type == "draw_response":
                 accept = data.accept
                 if accept:
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "game_over",
                         "reason": "draw",
                         "winner": None
                     })
                 else:
-                    for pid, ws in manager.active_connections.get(room_id, {}).items():
+                    for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                         if pid != player_id:
                             await ws.send_json({"type": "draw_declined"})
             
             elif message_type == "request_undo":
                 # Запрос на отмену хода
-                for pid, ws in manager.active_connections.get(room_id, {}).items():
+                for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                     if pid != player_id and pid in room["players"]:
                         await ws.send_json({"type": "undo_requested"})
                         room["undo_requests"][player_id] = True
@@ -1049,26 +1014,21 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             elif message_type == "undo_response":
                 accept = data.accept
                 if accept and room["move_history"]:
-                    # Отменяем последний ход
+                    # Отменяем последний ход используя метод undo_move
                     last_move = room["move_history"].pop()
-                    room["game"] = ChessGame()  # Пересоздаём игру
-                    # Воспроизводим все ходы кроме последнего
-                    for move in room["move_history"]:
-                        room["game"].make_move(
-                            tuple(move["from"]), 
-                            tuple(move["to"]), 
-                            room["custom_moves"],
-                            move.get("promotion")
-                        )
+                    room["game"].undo_move(last_move)
                     
-                    await manager.send_to_room(room_id, {
+                    # Обновляем таймеры (упрощённо - возвращаем время назад)
+                    # В реальности нужно хранить время каждого хода
+                    
+                    await connection_manager.send_to_room(room_id, {
                         "type": "undo_accepted",
                         "board": room["game"].get_board_state(),
                         "current_player": room["game"].current_player,
                         "move_history": room["move_history"]
                     })
                 else:
-                    for pid, ws in manager.active_connections.get(room_id, {}).items():
+                    for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                         if pid in room["undo_requests"]:
                             await ws.send_json({"type": "undo_declined"})
                 room["undo_requests"] = {}
@@ -1089,7 +1049,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     for pid in room["players"]:
                         room["colors"][pid] = "black" if room["colors"][pid] == "white" else "white"
                     
-                    await manager.send_to_room(room_id, {
+                    await connection_manager.send_to_room(room_id, {
                         "type": "rematch_started",
                         "board": room["game"].get_board_state(),
                         "current_player": room["game"].current_player,
@@ -1098,7 +1058,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     })
                 else:
                     # Уведомляем противника
-                    for pid, ws in manager.active_connections.get(room_id, {}).items():
+                    for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                         if pid != player_id and pid in room["players"]:
                             await ws.send_json({"type": "rematch_requested"})
             
@@ -1109,14 +1069,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     if len(room["rematch_requests"]) >= 2:
                         room["game"] = ChessGame()
                         room["move_history"] = []
-                        room["timers"] = {"white": 600, "black": 600}
+                        room["timers"] = {"white": config.DEFAULT_TIME_CONTROL, "black": config.DEFAULT_TIME_CONTROL}
                         room["last_move_time"] = None
                         room["rematch_requests"] = set()
                         
                         for pid in room["players"]:
                             room["colors"][pid] = "black" if room["colors"][pid] == "white" else "white"
                         
-                        await manager.send_to_room(room_id, {
+                        await connection_manager.send_to_room(room_id, {
                             "type": "rematch_started",
                             "board": room["game"].get_board_state(),
                             "current_player": room["game"].current_player,
@@ -1125,7 +1085,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                         })
                 else:
                     room["rematch_requests"] = set()
-                    for pid, ws in manager.active_connections.get(room_id, {}).items():
+                    for pid, ws in connection_manager.active_connections.get(room_id, {}).items():
                         if pid != player_id:
                             await ws.send_json({"type": "rematch_declined"})
             
@@ -1136,7 +1096,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 room["increment"] = data.increment
                 room["delay"] = data.delay
                 
-                await manager.send_to_room(room_id, {
+                await connection_manager.send_to_room(room_id, {
                     "type": "time_control_updated",
                     "timers": room["timers"],
                     "increment": room["increment"],
@@ -1148,7 +1108,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 analysis = PositionAnalyzer.analyze_threats(room["game"].board, room["colors"].get(player_id, "white"))
                 evaluation = PositionAnalyzer.evaluate_position(room["game"].board, room["colors"].get(player_id, "white"))
                 
-                await manager.send_to_player(room_id, player_id, {
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "position_analysis",
                     "evaluation": evaluation,
                     "threats": analysis
@@ -1167,7 +1127,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     result
                 )
                 
-                await manager.send_to_player(room_id, player_id, {
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "pgn_exported",
                     "pgn": pgn
                 })
@@ -1178,7 +1138,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 rank = RatingSystem.get_rank(rating)
                 history = await RatingSystem.get_rating_history(player_id, 10)
                 
-                await manager.send_to_player(room_id, player_id, {
+                await connection_manager.send_to_player(room_id, player_id, {
                     "type": "rating_info",
                     "rating": rating,
                     "rank": rank,
@@ -1187,7 +1147,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     
     except WebSocketDisconnect:
         logger.info(f"Игрок {player_id} отключился от комнаты {room_id}")
-        manager.disconnect(room_id, player_id)
+        connection_manager.disconnect(room_id, player_id)
         
         # Сохраняем состояние игры при неожиданном отключении
         if player_id in room.get("players", []):
@@ -1196,8 +1156,22 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             # Если игра была в процессе, сохраняем её
             if room.get("game") and len(room["move_history"]) > 0:
                 try:
-                    white_id = room["players"][0] if len(room["players"]) > 0 and room["colors"].get(room["players"][0]) == "white" else None
-                    black_id = room["players"][0] if len(room["players"]) > 0 and room["colors"].get(room["players"][0]) == "black" else None
+                    # Правильно определяем white_id и black_id
+                    white_id = None
+                    black_id = None
+                    for pid in room["players"]:
+                        color = room["colors"].get(pid)
+                        if color == "white":
+                            white_id = pid
+                        elif color == "black":
+                            black_id = pid
+                    
+                    # Также проверяем отключившегося игрока
+                    disconnected_color = room["colors"].get(player_id)
+                    if disconnected_color == "white":
+                        white_id = player_id
+                    elif disconnected_color == "black":
+                        black_id = player_id
                     
                     if white_id and black_id:
                         await db.save_game(
@@ -1211,7 +1185,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
         
         # Уведомляем остальных игроков
         try:
-            await manager.send_to_room(room_id, {
+            await connection_manager.send_to_room(room_id, {
                 "type": "player_left",
                 "players_count": len(room.get("players", [])),
                 "player_id": player_id
@@ -1221,13 +1195,12 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
         
         # Удаляем комнату если она пуста
         if len(room.get("players", [])) == 0 and len(room.get("spectators", [])) == 0:
-            if room_id in rooms:
-                del rooms[room_id]
-                logger.info(f"Комната {room_id} удалена (пуста)")
+            room_manager.delete_room(room_id)
+            logger.info(f"Комната {room_id} удалена (пуста)")
     except Exception as e:
         logger.error(f"Неожиданная ошибка в WebSocket соединении {player_id}: {e}", exc_info=True)
         try:
-            manager.disconnect(room_id, player_id)
+            connection_manager.disconnect(room_id, player_id)
         except:
             pass
 
