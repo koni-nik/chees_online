@@ -52,12 +52,14 @@ FRONTEND_VERSIONS = {
     "frontend": FRONTEND_BASE / "frontend",
     "frontend-v2.5": FRONTEND_BASE / "frontend-v2.5",
     "frontend-v2.6": FRONTEND_BASE / "frontend-v2.6",
-    "frontend-v2.7": FRONTEND_BASE / "frontend-v2.7"
+    "frontend-v2.7": FRONTEND_BASE / "frontend-v2.7",
+    "frontend-v2.8": FRONTEND_BASE / "frontend-v2.8"
 }
 # Для обратной совместимости
 FRONTEND_V25_DIR = FRONTEND_VERSIONS["frontend-v2.5"]
 FRONTEND_V26_DIR = FRONTEND_VERSIONS["frontend-v2.6"]
 FRONTEND_V27_DIR = FRONTEND_VERSIONS["frontend-v2.7"]
+FRONTEND_V28_DIR = FRONTEND_VERSIONS["frontend-v2.8"]
 
 app = FastAPI(title="Chess Online")
 
@@ -481,9 +483,19 @@ async def v27_root():
     return response
 
 
+@app.get("/v2.8")
+async def v28_root():
+    response = FileResponse(str(FRONTEND_V28_DIR / "index.html"))
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+
 app.mount("/v2.5/static", StaticFiles(directory=str(FRONTEND_V25_DIR)), name="static_v25")
 app.mount("/v2.6/static", StaticFiles(directory=str(FRONTEND_V26_DIR)), name="static_v26")
 app.mount("/v2.7/static", StaticFiles(directory=str(FRONTEND_V27_DIR / "static")), name="static_v27")
+app.mount("/v2.8/static", StaticFiles(directory=str(FRONTEND_V28_DIR / "static")), name="static_v28")
 
 # Монтируем статические файлы для основной версии
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
@@ -492,6 +504,28 @@ app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="static")
 @app.get("/v2.7/game.js")
 async def v27_game_js():
     response = FileResponse(str(FRONTEND_V27_DIR / "game.js"), media_type="application/javascript")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+# Маршруты для v2.8 (auth.js и game.js находятся в корне директории)
+@app.get("/v2.8/auth.js")
+async def v28_auth_js():
+    response = FileResponse(str(FRONTEND_V28_DIR / "auth.js"), media_type="application/javascript")
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+@app.get("/v2.8/game.js")
+async def v28_game_js():
+    # Проверяем существование файла, если нет - возвращаем пустой или используем v2.7
+    game_js_path = FRONTEND_V28_DIR / "game.js"
+    if not game_js_path.exists():
+        # Используем game.js из v2.7 как fallback
+        game_js_path = FRONTEND_V27_DIR / "game.js"
+    response = FileResponse(str(game_js_path), media_type="application/javascript")
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     response.headers["Pragma"] = "no-cache"
     response.headers["Expires"] = "0"
