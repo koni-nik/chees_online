@@ -1,9 +1,13 @@
 # rating.py - Система рейтинга Elo
 from typing import Dict, Tuple
+from cachetools import TTLCache
 from database import db
 from logger import setup_logger
 
 logger = setup_logger()
+
+# Кэш для рейтингов (TTL = 5 минут, максимум 1000 записей)
+rating_cache = TTLCache(maxsize=1000, ttl=300)
 
 
 class RatingSystem:
@@ -15,6 +19,7 @@ class RatingSystem:
     async def get_rating(player_id: str) -> int:
         """
         Получить текущий рейтинг игрока.
+        Использует кэширование для уменьшения запросов к БД.
         
         Args:
             player_id: ID игрока
@@ -22,8 +27,27 @@ class RatingSystem:
         Returns:
             Текущий рейтинг игрока
         """
+        # Проверяем кэш
+        if player_id in rating_cache:
+            logger.debug(f"Рейтинг {player_id} получен из кэша")
+            return rating_cache[player_id]
+        
+        # Получаем из БД
         player = await db.get_or_create_player(player_id)
-        return player.get("rating", 1200)
+        rating = player.get("rating", 1200)
+        
+        # Сохраняем в кэш
+        rating_cache[player_id] = rating
+        logger.debug(f"Рейтинг {player_id} сохранен в кэш: {rating}")
+        
+        return rating
+    
+    @staticmethod
+    def invalidate_cache(player_id: str):
+        """Инвалидирует кэш для игрока (вызывается после обновления рейтинга)."""
+        if player_id in rating_cache:
+            del rating_cache[player_id]
+            logger.debug(f"Кэш рейтинга для {player_id} инвалидирован")
     
     @staticmethod
     def get_rank(rating: int) -> str:
@@ -91,6 +115,10 @@ class RatingSystem:
         # Обновляем рейтинги в БД
         await db.update_player_rating(player_id, new_player_rating)
         await db.update_player_rating(opponent_id, new_opponent_rating)
+        
+        # Инвалидируем кэш
+        RatingSystem.invalidate_cache(player_id)
+        RatingSystem.invalidate_cache(opponent_id)
         
         # Сохраняем историю
         await db.add_rating_history(

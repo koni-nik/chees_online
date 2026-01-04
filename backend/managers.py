@@ -18,6 +18,7 @@ class RoomManager:
     def __init__(self):
         self.rooms: Dict[str, Dict] = {}
         self._cleanup_task: Optional[asyncio.Task] = None
+        self._room_locks: Dict[str, asyncio.Lock] = {}  # Блокировки для каждой комнаты
     
     def create_room(self, room_id: str) -> Dict:
         """Создаёт новую комнату."""
@@ -39,8 +40,16 @@ class RoomManager:
                 "created_at": time.time(),
                 "last_activity": time.time()
             }
+            # Создаем блокировку для комнаты
+            self._room_locks[room_id] = asyncio.Lock()
             logger.debug(f"Создана комната {room_id}")
         return self.rooms[room_id]
+    
+    def get_room_lock(self, room_id: str) -> asyncio.Lock:
+        """Получает блокировку для комнаты. Создает если не существует."""
+        if room_id not in self._room_locks:
+            self._room_locks[room_id] = asyncio.Lock()
+        return self._room_locks[room_id]
     
     def get_room(self, room_id: str) -> Optional[Dict]:
         """Получает комнату по ID."""
@@ -50,6 +59,9 @@ class RoomManager:
         """Удаляет комнату."""
         if room_id in self.rooms:
             del self.rooms[room_id]
+            # Удаляем блокировку комнаты
+            if room_id in self._room_locks:
+                del self._room_locks[room_id]
             logger.debug(f"Удалена комната {room_id}")
     
     def update_activity(self, room_id: str):
@@ -177,8 +189,9 @@ class ConnectionManager:
             if player_id in self.active_connections[room_id]:
                 try:
                     await self.active_connections[room_id][player_id].close()
-                except:
-                    pass
+                except Exception as e:
+                    # Игнорируем ошибки закрытия соединения (соединение уже закрыто)
+                    logger.debug(f"Ошибка при закрытии соединения {player_id}: {e}")
                 self.disconnect(room_id, player_id)
     
     async def send_to_player(self, room_id: str, player_id: str, message: dict, max_retries: int = 3):

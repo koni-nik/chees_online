@@ -22,6 +22,7 @@ class Database:
         """
         self.db_path = db_path
         self._initialized = False
+        self._connection = None  # Переиспользуемое соединение
     
     async def initialize(self):
         """Инициализирует базу данных и создаёт таблицы."""
@@ -84,6 +85,16 @@ class Database:
             self._initialized = True
             logger.info("База данных инициализирована")
     
+    async def _get_connection(self):
+        """Получает или создает соединение с БД."""
+        if self._connection is None:
+            self._connection = await aiosqlite.connect(
+                self.db_path,
+                check_same_thread=False
+            )
+            self._connection.row_factory = aiosqlite.Row
+        return self._connection
+    
     async def get_or_create_player(self, player_id: str) -> Dict:
         """
         Получает или создаёт игрока.
@@ -94,30 +105,29 @@ class Database:
         Returns:
             Словарь с данными игрока
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute(
-                "SELECT * FROM players WHERE player_id = ?",
-                (player_id,)
-            )
-            row = await cursor.fetchone()
-            
-            if row:
-                return dict(row)
-            
-            # Создаём нового игрока
-            await db.execute(
-                "INSERT INTO players (player_id, rating) VALUES (?, ?)",
-                (player_id, 1200)
-            )
-            await db.commit()
-            
-            cursor = await db.execute(
-                "SELECT * FROM players WHERE player_id = ?",
-                (player_id,)
-            )
-            row = await cursor.fetchone()
+        db = await self._get_connection()
+        cursor = await db.execute(
+            "SELECT * FROM players WHERE player_id = ?",
+            (player_id,)
+        )
+        row = await cursor.fetchone()
+        
+        if row:
             return dict(row)
+        
+        # Создаём нового игрока
+        await db.execute(
+            "INSERT INTO players (player_id, rating) VALUES (?, ?)",
+            (player_id, 1200)
+        )
+        await db.commit()
+        
+        cursor = await db.execute(
+            "SELECT * FROM players WHERE player_id = ?",
+            (player_id,)
+        )
+        row = await cursor.fetchone()
+        return dict(row)
     
     async def update_player_rating(self, player_id: str, new_rating: int):
         """
@@ -127,13 +137,13 @@ class Database:
             player_id: ID игрока
             new_rating: Новый рейтинг
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute(
-                "UPDATE players SET rating = ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?",
-                (new_rating, player_id)
-            )
-            await db.commit()
-            logger.debug(f"Рейтинг игрока {player_id} обновлён до {new_rating}")
+        db = await self._get_connection()
+        await db.execute(
+            "UPDATE players SET rating = ?, updated_at = CURRENT_TIMESTAMP WHERE player_id = ?",
+            (new_rating, player_id)
+        )
+        await db.commit()
+        logger.debug(f"Рейтинг игрока {player_id} обновлён до {new_rating}")
     
     async def add_rating_history(
         self,
@@ -155,14 +165,14 @@ class Database:
             opponent_rating: Рейтинг соперника
             result: Результат (1.0 - победа, 0.5 - ничья, 0.0 - поражение)
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute("""
-                INSERT INTO rating_history 
-                (player_id, old_rating, new_rating, opponent_id, opponent_rating, result)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (player_id, old_rating, new_rating, opponent_id, opponent_rating, result))
-            await db.commit()
-            logger.debug(f"Добавлена запись в историю рейтинга для {player_id}")
+        db = await self._get_connection()
+        await db.execute("""
+            INSERT INTO rating_history 
+            (player_id, old_rating, new_rating, opponent_id, opponent_rating, result)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (player_id, old_rating, new_rating, opponent_id, opponent_rating, result))
+        await db.commit()
+        logger.debug(f"Добавлена запись в историю рейтинга для {player_id}")
     
     async def get_rating_history(self, player_id: str, limit: int = 10) -> List[Dict]:
         """
@@ -175,16 +185,15 @@ class Database:
         Returns:
             Список записей истории рейтинга
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
-                SELECT * FROM rating_history 
-                WHERE player_id = ? 
-                ORDER BY created_at DESC 
-                LIMIT ?
-            """, (player_id, limit))
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        db = await self._get_connection()
+        cursor = await db.execute("""
+            SELECT * FROM rating_history 
+            WHERE player_id = ? 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (player_id, limit))
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
     
     async def save_game(
         self,
@@ -207,16 +216,16 @@ class Database:
         Returns:
             ID сохранённой игры
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            move_history_json = json.dumps(move_history) if move_history else None
-            cursor = await db.execute("""
-                INSERT INTO games (white_player_id, black_player_id, result, move_history, pgn)
-                VALUES (?, ?, ?, ?, ?)
-            """, (white_player_id, black_player_id, result, move_history_json, pgn))
-            await db.commit()
-            game_id = cursor.lastrowid
-            logger.info(f"Игра сохранена: ID={game_id}, white={white_player_id}, black={black_player_id}")
-            return game_id
+        db = await self._get_connection()
+        move_history_json = json.dumps(move_history) if move_history else None
+        cursor = await db.execute("""
+            INSERT INTO games (white_player_id, black_player_id, result, move_history, pgn)
+            VALUES (?, ?, ?, ?, ?)
+        """, (white_player_id, black_player_id, result, move_history_json, pgn))
+        await db.commit()
+        game_id = cursor.lastrowid
+        logger.info(f"Игра сохранена: ID={game_id}, white={white_player_id}, black={black_player_id}")
+        return game_id
     
     async def get_player_games(self, player_id: str, limit: int = 10) -> List[Dict]:
         """
@@ -229,16 +238,15 @@ class Database:
         Returns:
             Список игр
         """
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            cursor = await db.execute("""
-                SELECT * FROM games 
-                WHERE white_player_id = ? OR black_player_id = ?
-                ORDER BY created_at DESC 
-                LIMIT ?
-            """, (player_id, player_id, limit))
-            rows = await cursor.fetchall()
-            return [dict(row) for row in rows]
+        db = await self._get_connection()
+        cursor = await db.execute("""
+            SELECT * FROM games 
+            WHERE white_player_id = ? OR black_player_id = ?
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (player_id, player_id, limit))
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
 
 # Глобальный экземпляр базы данных

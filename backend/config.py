@@ -36,6 +36,13 @@ class Config:
     DEFAULT_TIME_INCREMENT: int = int(os.getenv("DEFAULT_TIME_INCREMENT", "0"))
     DEFAULT_TIME_DELAY: int = int(os.getenv("DEFAULT_TIME_DELAY", "0"))
     
+    # Рейтинг и Elo
+    INITIAL_RATING: int = int(os.getenv("INITIAL_RATING", "1200"))
+    ELO_K_FACTOR: int = int(os.getenv("ELO_K_FACTOR", "32"))
+    
+    # Окружение
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")  # development или production
+    
     # Очистка ресурсов
     ROOM_CLEANUP_INTERVAL: int = int(os.getenv("ROOM_CLEANUP_INTERVAL", "300"))  # 5 минут
     TOKEN_CLEANUP_INTERVAL: int = int(os.getenv("TOKEN_CLEANUP_INTERVAL", "3600"))  # 1 час

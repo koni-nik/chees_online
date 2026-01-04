@@ -159,7 +159,8 @@ class PGNImporter:
             key, value = header_line.split(' "', 1)
             value = value.rstrip('"')
             return key, value
-        except:
+        except Exception as e:
+            # Логируем ошибку для отладки, но не прерываем выполнение
             return None, None
     
     @staticmethod

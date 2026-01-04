@@ -91,7 +91,14 @@ app.add_middleware(NoCacheMiddleware)
 
 # Настройка CORS - разрешаем запросы с фронтенда
 # ВАЖНО: CORS должен быть добавлен ПОСЛЕ других middleware
-if config.ALLOW_ANY_ORIGIN:
+if config.ENVIRONMENT == "production":
+    # В продакшене запрещаем ALLOW_ANY_ORIGIN
+    if config.ALLOW_ANY_ORIGIN:
+        logger.error("ALLOW_ANY_ORIGIN=true запрещен в продакшене! Используйте конкретные домены в CORS_ORIGINS.")
+        raise ValueError("ALLOW_ANY_ORIGIN не может быть True в продакшене")
+    cors_origins = config.CORS_ORIGINS
+    logger.info(f"CORS настроен для продакшена: {cors_origins}")
+elif config.ALLOW_ANY_ORIGIN:
     # Только для разработки - в продакшене использовать конкретные домены
     logger.warning("CORS настроен на разрешение всех доменов - не использовать в продакшене!")
     cors_origins = ["*"]
@@ -124,6 +131,14 @@ async def health_check():
 async def test_api():
     """Тестовый endpoint для проверки работы API."""
     return {"status": "ok", "message": "API работает"}
+
+# Подключаем auth routes
+try:
+    from routes.auth import router as auth_router
+    app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
+    logger.info("Auth routes подключены")
+except ImportError as e:
+    logger.warning(f"Не удалось подключить auth routes: {e}")
 
 # ВАЖНО: Endpoints для турнирных комнат определены ниже, после определения
 # tournament_rooms и manager. Они будут зарегистрированы при загрузке модуля.
@@ -805,94 +820,98 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                 
                 logger.debug(f"Move request from {player_id}: from={from_pos}, to={to_pos}, player_color={player_color}, current_player={room['game'].current_player}")
                 
-                # Проверяем что ход делает правильный игрок
-                if player_color != room["game"].current_player:
-                    logger.warning(f"Wrong turn: player_color={player_color}, current_player={room['game'].current_player}")
-                    await connection_manager.send_to_player(room_id, player_id, {
-                        "type": "error",
-                        "message": "Не ваш ход"
-                    })
-                    continue
+                # Получаем блокировку для комнаты для защиты от race conditions
+                room_lock = room_manager.get_room_lock(room_id)
                 
-                # Выполняем ход (с учётом кастомных ходов)
-                result = room["game"].make_move(from_pos, to_pos, room["custom_moves"], promotion_piece)
-                logger.debug(f"Move result: success={result.get('success')}, message={result.get('message')}")
-                
-                if result["success"]:
-                    # Обновляем таймеры
-                    now = time.time()
-                    if room["last_move_time"]:
-                        elapsed = now - room["last_move_time"]
-                        prev_player = "black" if room["game"].current_player == "white" else "white"
-                        room["timers"][prev_player] = max(0, room["timers"][prev_player] - int(elapsed))
-                        # Добавляем инкремент
-                        room["timers"][prev_player] += room["increment"]
-                    room["last_move_time"] = now
+                async with room_lock:
+                    # Проверяем что ход делает правильный игрок
+                    if player_color != room["game"].current_player:
+                        logger.warning(f"Wrong turn: player_color={player_color}, current_player={room['game'].current_player}")
+                        await connection_manager.send_to_player(room_id, player_id, {
+                            "type": "error",
+                            "message": "Не ваш ход"
+                        })
+                        continue
                     
-                    # Сохраняем ход в историю
-                    move_record = {
-                        "from": list(from_pos),
-                        "to": list(to_pos),
-                        "piece": result.get("piece"),
-                        "captured": result.get("captured"),
-                        "castling": result.get("castling"),
-                        "en_passant": result.get("en_passant"),
-                        "promotion": result.get("promotion")
-                    }
-                    room["move_history"].append(move_record)
+                    # Выполняем ход (с учётом кастомных ходов)
+                    result = room["game"].make_move(from_pos, to_pos, room["custom_moves"], promotion_piece)
+                    logger.debug(f"Move result: success={result.get('success')}, message={result.get('message')}")
                     
-                    # Анализ позиции (для версии 2.7)
-                    position_eval = PositionAnalyzer.evaluate_position(room["game"].board, room["game"].current_player)
-                    
-                    # Отправляем обновление всем
-                    await connection_manager.send_to_room(room_id, {
-                        "type": "move",
-                        "from": list(from_pos),
-                        "to": list(to_pos),
-                        "board": room["game"].get_board_state(),
-                        "current_player": room["game"].current_player,
-                        "check": result.get("check", False),
-                        "checkmate": result.get("checkmate", False),
-                        "stalemate": result.get("stalemate", False),
-                        "captured": result.get("captured"),
-                        "castling": result.get("castling"),
-                        "en_passant": result.get("en_passant"),
-                        "promotion": result.get("promotion"),
-                        "en_passant_target": result.get("en_passant_target"),
-                        "timers": room["timers"],
-                        "position_evaluation": position_eval
-                    })
-                    
-                    # Обновляем рейтинг при завершении игры
-                    if result.get("checkmate") or result.get("stalemate"):
-                        winner = None
-                        if result.get("checkmate"):
-                            winner = "black" if room["game"].current_player == "white" else "white"
+                    if result["success"]:
+                        # Обновляем таймеры
+                        now = time.time()
+                        if room["last_move_time"]:
+                            elapsed = now - room["last_move_time"]
+                            prev_player = "black" if room["game"].current_player == "white" else "white"
+                            room["timers"][prev_player] = max(0, room["timers"][prev_player] - int(elapsed))
+                            # Добавляем инкремент
+                            room["timers"][prev_player] += room["increment"]
+                        room["last_move_time"] = now
                         
-                        # Обновляем рейтинги
-                        if len(room["players"]) == 2:
-                            player1_id = room["players"][0]
-                            player2_id = room["players"][1]
+                        # Сохраняем ход в историю
+                        move_record = {
+                            "from": list(from_pos),
+                            "to": list(to_pos),
+                            "piece": result.get("piece"),
+                            "captured": result.get("captured"),
+                            "castling": result.get("castling"),
+                            "en_passant": result.get("en_passant"),
+                            "promotion": result.get("promotion")
+                        }
+                        room["move_history"].append(move_record)
+                        
+                        # Анализ позиции (для версии 2.7)
+                        position_eval = PositionAnalyzer.evaluate_position(room["game"].board, room["game"].current_player)
+                        
+                        # Отправляем обновление всем
+                        await connection_manager.send_to_room(room_id, {
+                            "type": "move",
+                            "from": list(from_pos),
+                            "to": list(to_pos),
+                            "board": room["game"].get_board_state(),
+                            "current_player": room["game"].current_player,
+                            "check": result.get("check", False),
+                            "checkmate": result.get("checkmate", False),
+                            "stalemate": result.get("stalemate", False),
+                            "captured": result.get("captured"),
+                            "castling": result.get("castling"),
+                            "en_passant": result.get("en_passant"),
+                            "promotion": result.get("promotion"),
+                            "en_passant_target": result.get("en_passant_target"),
+                            "timers": room["timers"],
+                            "position_evaluation": position_eval
+                        })
+                        
+                        # Обновляем рейтинг при завершении игры
+                        if result.get("checkmate") or result.get("stalemate"):
+                            winner = None
+                            if result.get("checkmate"):
+                                winner = "black" if room["game"].current_player == "white" else "white"
                             
-                            if winner:
-                                if room["colors"][player1_id] == winner:
-                                    result_value = 1.0
+                            # Обновляем рейтинги
+                            if len(room["players"]) == 2:
+                                player1_id = room["players"][0]
+                                player2_id = room["players"][1]
+                                
+                                if winner:
+                                    if room["colors"][player1_id] == winner:
+                                        result_value = 1.0
+                                    else:
+                                        result_value = 0.0
                                 else:
-                                    result_value = 0.0
-                            else:
-                                result_value = 0.5  # Ничья
-                            
-                            rating_update = await RatingSystem.update_rating(player1_id, player2_id, result_value)
-                            
-                            await connection_manager.send_to_room(room_id, {
-                                "type": "rating_updated",
-                                "ratings": rating_update
-                            })
-                else:
-                    await connection_manager.send_to_player(room_id, player_id, {
-                        "type": "error",
-                        "message": result.get("message", "Недопустимый ход")
-                    })
+                                    result_value = 0.5  # Ничья
+                                
+                                rating_update = await RatingSystem.update_rating(player1_id, player2_id, result_value)
+                                
+                                await connection_manager.send_to_room(room_id, {
+                                    "type": "rating_updated",
+                                    "ratings": rating_update
+                                })
+                    else:
+                        await connection_manager.send_to_player(room_id, player_id, {
+                            "type": "error",
+                            "message": result.get("message", "Недопустимый ход")
+                        })
             
             elif message_type == "get_valid_moves":
                 # Убеждаемся, что data был успешно создан
