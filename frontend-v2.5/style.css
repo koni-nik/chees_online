@@ -1394,6 +1394,31 @@ body:has(#game-screen:not(.hidden)) .switchers-panel {
     color: var(--bg-primary);
 }
 
+.version-select,
+.theme-select {
+    padding: 5px 10px;
+    background: transparent;
+    border: 1px solid var(--text-dim);
+    color: var(--text-secondary);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: 'Orbitron', sans-serif;
+    transition: all 0.3s;
+    cursor: pointer;
+    outline: none;
+}
+
+.version-select:hover,
+.theme-select:hover {
+    border-color: var(--neon-cyan);
+    color: var(--neon-cyan);
+}
+
+.version-select:focus,
+.theme-select:focus {
+    border-color: var(--neon-cyan);
+}
+
 /* Responsive */
 @media (max-width: 800px) {
     .game-wrapper { 

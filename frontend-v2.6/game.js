@@ -2332,16 +2332,22 @@ class ThemeSwitcher {
     }
     
     updateButtons() {
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.theme === this.currentTheme);
-        });
+        // Обновляем select для тем
+        const themeSelect = document.getElementById('theme-select');
+        if (themeSelect) {
+            themeSelect.value = this.currentTheme;
+        }
     }
     
     initButtons() {
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.applyTheme(btn.dataset.theme));
-        });
-        this.updateButtons();
+        // Инициализируем select для тем
+        const themeSelect = document.getElementById('theme-select');
+        if (themeSelect) {
+            themeSelect.value = this.currentTheme;
+            themeSelect.addEventListener('change', (e) => {
+                this.applyTheme(e.target.value);
+            });
+        }
     }
 }
 
@@ -2352,6 +2358,20 @@ const roomParam = urlParams.get('room');
 const themeSwitcher = new ThemeSwitcher();
 const game = new ChessGame();
 window.game = game;
+
+// Обработчик для переключателя версий
+document.addEventListener('DOMContentLoaded', () => {
+    const versionSelect = document.getElementById('version-select');
+    if (versionSelect) {
+        // Устанавливаем текущую версию
+        const currentPath = window.location.pathname;
+        versionSelect.value = currentPath === '/' ? '/' : currentPath;
+        
+        versionSelect.addEventListener('change', (e) => {
+            window.location.href = e.target.value;
+        });
+    }
+});
 
 // Наблюдатель за изменениями видимости game-screen
 const gameScreenObserver = new MutationObserver((mutations) => {

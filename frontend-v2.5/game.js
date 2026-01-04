@@ -1523,16 +1523,22 @@ class ThemeSwitcher {
     }
     
     updateButtons() {
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.classList.toggle('active', btn.dataset.theme === this.currentTheme);
-        });
+        // Обновляем select для тем
+        const themeSelect = document.getElementById('theme-select');
+        if (themeSelect) {
+            themeSelect.value = this.currentTheme;
+        }
     }
     
     initButtons() {
-        document.querySelectorAll('.theme-btn').forEach(btn => {
-            btn.addEventListener('click', () => this.applyTheme(btn.dataset.theme));
-        });
-        this.updateButtons();
+        // Инициализируем select для тем
+        const themeSelect = document.getElementById('theme-select');
+        if (themeSelect) {
+            themeSelect.value = this.currentTheme;
+            themeSelect.addEventListener('change', (e) => {
+                this.applyTheme(e.target.value);
+            });
+        }
     }
 }
 
