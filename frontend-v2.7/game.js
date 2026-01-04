@@ -2307,6 +2307,12 @@ class ChessGame {
     }
     
     handleClick(event, isRightClick = false) {
+        // Для локальной игры - игнорируем клик, если было перетаскивание
+        if (this.isLocalGame && this.wasDragging) {
+            this.wasDragging = false;
+            return;
+        }
+        
         const rect = this.canvas.getBoundingClientRect();
         const offset = this.coordsOffset;
         // Вычитаем offset из координат клика
@@ -2318,8 +2324,11 @@ class ChessGame {
         // Преобразуем координаты отображения в логические координаты
         const [x, y] = this.getLogicalCoords(displayX, displayY);
         
-        if (this.isLocalGame) this.handleLocalClick(x, y);
-        else this.handleOnlineClick(x, y);
+        if (this.isLocalGame) {
+            this.handleLocalClick(x, y);
+        } else {
+            this.handleOnlineClick(x, y);
+        }
     }
     
     handleMouseDown(event) {
@@ -2381,20 +2390,9 @@ class ChessGame {
             });
             
             this.draw();
-        } 
-        // Для онлайн игры - выбор фигуры (без перетаскивания)
-        else if (!this.isLocalGame && piece && piece.color === this.myColor && this.myColor === this.currentPlayer) {
-            this.selectedPiece = [x, y];
-            // Запрашиваем допустимые ходы через WebSocket
-            if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-                this.ws.send(JSON.stringify({ type: 'get_valid_moves', position: [x, y] }));
-                document.getElementById('selected-piece-info').textContent = `${piece.color === 'white' ? 'Белая' : 'Чёрная'} ${this.getPieceNameRu(piece.type)}`;
-            }
-            this.draw();
-            console.log('[DEBUG] Piece selected for online game:', { x, y, piece: piece.type });
-        } else {
-            console.log('[DEBUG] Drag/Select not started - conditions not met');
         }
+        // Для онлайн игры - НЕ выбираем фигуру здесь, это будет сделано в handleClick
+        // чтобы клик работал без удержания
     }
     
     handleMouseMove(event) {
@@ -2498,6 +2496,8 @@ class ChessGame {
             }
         }
         
+        // Сбрасываем флаг перетаскивания
+        this.wasDragging = false;
         this.draw();
     }
     
