@@ -524,11 +524,17 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
     # Уведомляем о новом игроке
     matchmaking_event.set()
     
-    await websocket.send_json({
-        "type": "queued",
-        "position": len(matchmaking_queue),
-        "rating": rating
-    })
+    try:
+        # Проверяем состояние соединения перед отправкой
+        if websocket.client_state.name != "DISCONNECTED":
+            await websocket.send_json({
+                "type": "queued",
+                "position": len(matchmaking_queue),
+                "rating": rating
+            })
+    except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+        logger.warning(f"Соединение закрыто при отправке начального сообщения: {e}")
+        return
     
     try:
         
@@ -572,17 +578,23 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
                 
                 # Уведомляем обоих
                 try:
-                    await websocket.send_json({
-                        "type": "match_found",
-                        "room_id": room_id,
-                        "opponent_rating": best_match["rating"]
-                    })
+                    # Проверяем состояние соединения перед отправкой
+                    if websocket.client_state.name != "DISCONNECTED":
+                        await websocket.send_json({
+                            "type": "match_found",
+                            "room_id": room_id,
+                            "opponent_rating": best_match["rating"]
+                        })
                     
-                    await best_match["websocket"].send_json({
-                        "type": "match_found",
-                        "room_id": room_id,
-                        "opponent_rating": rating
-                    })
+                    # Проверяем состояние соединения соперника
+                    if best_match["websocket"].client_state.name != "DISCONNECTED":
+                        await best_match["websocket"].send_json({
+                            "type": "match_found",
+                            "room_id": room_id,
+                            "opponent_rating": rating
+                        })
+                except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+                    logger.warning(f"Соединение закрыто при отправке уведомления о найденном матче: {e}")
                 except Exception as e:
                     logger.error(f"Ошибка при отправке уведомления о найденном матче: {e}")
                 
@@ -591,12 +603,17 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
             # Обновляем позицию в очереди
             try:
                 pos = matchmaking_queue.index(player_entry) + 1
-                await websocket.send_json({
-                    "type": "queue_update",
-                    "position": pos,
-                    "queue_size": len(matchmaking_queue)
-                })
+                # Проверяем состояние соединения перед отправкой
+                if websocket.client_state.name != "DISCONNECTED":
+                    await websocket.send_json({
+                        "type": "queue_update",
+                        "position": pos,
+                        "queue_size": len(matchmaking_queue)
+                    })
             except ValueError:
+                break
+            except (WebSocketDisconnect, RuntimeError, ConnectionError) as e:
+                logger.debug(f"Соединение закрыто при отправке обновления очереди: {e}")
                 break
             
             # Ждём уведомления о новых игроках или таймаут
@@ -728,21 +745,21 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     })
                     continue
             except ValidationError as e:
-                logger.warning(f"Ошибка валидации данных от {player_id}: {e}")
+                logger.warning(f"Ошибка валидации данных от {player_id} (тип: {message_type}): {e}")
                 await connection_manager.send_to_player(room_id, player_id, {
                     "type": "error",
                     "message": f"Некорректные данные: {str(e)}"
                 })
                 continue
             except (KeyError, ValueError, TypeError) as e:
-                logger.warning(f"Ошибка формата данных от {player_id}: {e}")
+                logger.warning(f"Ошибка формата данных от {player_id} (тип: {message_type}): {e}", exc_info=True)
                 await connection_manager.send_to_player(room_id, player_id, {
                     "type": "error",
                     "message": "Некорректный формат данных"
                 })
                 continue
             except Exception as e:
-                logger.error(f"Неожиданная ошибка при обработке сообщения от {player_id}: {e}", exc_info=True)
+                logger.error(f"Неожиданная ошибка при обработке сообщения от {player_id} (тип: {message_type}): {e}", exc_info=True)
                 await connection_manager.send_to_player(room_id, player_id, {
                     "type": "error",
                     "message": "Внутренняя ошибка сервера"
@@ -844,6 +861,14 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
                     })
             
             elif message_type == "get_valid_moves":
+                # Убеждаемся, что data был успешно создан
+                if not hasattr(data, 'position'):
+                    logger.error(f"GetValidMovesRequest не содержит атрибут position для {player_id}")
+                    await connection_manager.send_to_player(room_id, player_id, {
+                        "type": "error",
+                        "message": "Некорректные данные запроса"
+                    })
+                    continue
                 pos = tuple(data.position)
                 moves = room["game"].get_valid_moves(pos)
                 
@@ -1198,11 +1223,11 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
             room_manager.delete_room(room_id)
             logger.info(f"Комната {room_id} удалена (пуста)")
     except Exception as e:
-        logger.error(f"Неожиданная ошибка в WebSocket соединении {player_id}: {e}", exc_info=True)
+        logger.error(f"Неожиданная ошибка в WebSocket соединении {player_id} (комната: {room_id}): {e}", exc_info=True)
         try:
             connection_manager.disconnect(room_id, player_id)
-        except:
-            pass
+        except Exception as disconnect_error:
+            logger.debug(f"Ошибка при отключении игрока {player_id}: {disconnect_error}")
 
 
 

@@ -578,6 +578,15 @@ class ChessGame:
             logger.warning("Попытка отката пустого хода")
             return
         
+        # Валидация структуры move_record
+        if not isinstance(move_record, dict):
+            logger.error(f"move_record должен быть словарём, получен: {type(move_record)}")
+            return
+        
+        if "from" not in move_record or "to" not in move_record:
+            logger.error(f"move_record должен содержать 'from' и 'to', получен: {list(move_record.keys())}")
+            return
+        
         from_pos = tuple(move_record["from"])
         to_pos = tuple(move_record["to"])
         captured = move_record.get("captured")
@@ -624,7 +633,13 @@ class ChessGame:
         self.board[to_pos[0]][to_pos[1]] = None
         self.board[from_pos[0]][from_pos[1]] = piece
         piece.position = from_pos
-        piece.moved = move_record.get("piece", {}).get("moved", False)
+        # Безопасный доступ к данным фигуры из истории хода
+        piece_data = move_record.get("piece")
+        if piece_data and isinstance(piece_data, dict):
+            piece.moved = piece_data.get("moved", False)
+        else:
+            # Если данных нет, сохраняем текущее состояние
+            piece.moved = piece.moved
         
         # Восстанавливаем захваченную фигуру
         if captured:
