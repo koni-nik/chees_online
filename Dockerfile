@@ -23,6 +23,7 @@ COPY frontend/ ./frontend/
 COPY frontend-v2.5/ ./frontend-v2.5/
 COPY frontend-v2.6/ ./frontend-v2.6/
 COPY frontend-v2.7/ ./frontend-v2.7/
+COPY frontend-v2.8/ ./frontend-v2.8/
 
 WORKDIR /app/backend
 
