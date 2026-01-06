@@ -325,12 +325,19 @@ class AuthManager {
      * Получение player_id для использования в игре
      */
     getPlayerId() {
-        if (this.currentUser) {
+        if (this.currentUser && this.currentUser.player_id) {
             return this.currentUser.player_id;
         }
         // Если нет пользователя, генерируем временный ID
         const tempId = 'temp_' + Math.random().toString(36).substring(2, 15);
         return tempId;
+    }
+    
+    /**
+     * Получение access токена для WebSocket соединений
+     */
+    getAccessToken() {
+        return this.accessToken;
     }
 }
 

@@ -511,7 +511,82 @@
                     }
                 }
             }
+            
+            // Обработчик кнопки статистики
+            const btnStats = document.getElementById('btn-stats');
+            if (btnStats) {
+                btnStats.addEventListener('click', async () => {
+                    document.getElementById('main-menu').classList.add('hidden');
+                    document.getElementById('stats-screen').classList.remove('hidden');
+                    await loadStats();
+                });
+            }
+            
+            // Обработчик кнопки назад из статистики
+            const btnBackStats = document.getElementById('btn-back-stats');
+            if (btnBackStats) {
+                btnBackStats.addEventListener('click', () => {
+                    document.getElementById('stats-screen').classList.add('hidden');
+                    document.getElementById('main-menu').classList.remove('hidden');
+                });
+            }
         });
+        
+        // Функция загрузки статистики
+        async function loadStats() {
+            try {
+                if (!authManager.isAuthenticated() && !authManager.isGuest()) {
+                    // Если не авторизован, показываем нулевую статистику
+                    updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
+                    return;
+                }
+                
+                // Получаем статистику из API
+                const token = authManager.getAccessToken();
+                if (!token) {
+                    updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
+                    return;
+                }
+                
+                const response = await fetch('/api/stats', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                if (response.ok) {
+                    const stats = await response.json();
+                    updateStatsDisplay(stats);
+                } else {
+                    console.error('Ошибка загрузки статистики:', response.status);
+                    updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки статистики:', error);
+                updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
+            }
+        }
+        
+        // Функция обновления отображения статистики
+        function updateStatsDisplay(stats) {
+            document.getElementById('stat-total').textContent = stats.total || 0;
+            document.getElementById('stat-white').textContent = stats.white_wins || 0;
+            document.getElementById('stat-black').textContent = stats.black_wins || 0;
+            document.getElementById('stat-draws').textContent = stats.draws || 0;
+            document.getElementById('rating-value').textContent = stats.rating || 1200;
+            document.getElementById('rating-rank').textContent = stats.rank || 'Новичок';
+            
+            // Обновляем прогресс-бары
+            const total = stats.total || 1;
+            const whitePercent = total > 0 ? (stats.white_wins / total * 100) : 0;
+            const blackPercent = total > 0 ? (stats.black_wins / total * 100) : 0;
+            
+            document.getElementById('bar-white').style.width = whitePercent + '%';
+            document.getElementById('bar-black').style.width = blackPercent + '%';
+            
+            const percentText = total > 0 ? `Белые: ${whitePercent.toFixed(1)}% | Чёрные: ${blackPercent.toFixed(1)}%` : 'Нет данных';
+            document.getElementById('stats-percent').textContent = percentText;
+        }
     </script>
 </body>
 </html>
