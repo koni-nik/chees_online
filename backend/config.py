@@ -47,6 +47,12 @@ class Config:
     ROOM_CLEANUP_INTERVAL: int = int(os.getenv("ROOM_CLEANUP_INTERVAL", "300"))  # 5 минут
     TOKEN_CLEANUP_INTERVAL: int = int(os.getenv("TOKEN_CLEANUP_INTERVAL", "3600"))  # 1 час
     
+    # JWT настройки
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+    JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+    
     # Расширяемость: список доступных версий фронтенда
     FRONTEND_VERSIONS: List[str] = [
         "frontend",
