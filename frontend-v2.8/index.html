@@ -14,7 +14,7 @@
             <h1 class="auth-title">Шахматы 2.8</h1>
             <p class="auth-subtitle">Система аккаунтов</p>
             
-            <!-- Форма входа -->
+            <!-- Форма входа (показывается по умолчанию) -->
             <div id="login-form" class="auth-form-container">
                 <form class="auth-form" id="login-form-element">
                     <div id="login-error" class="auth-error hidden"></div>
@@ -40,7 +40,7 @@
                 </form>
             </div>
             
-            <!-- Форма регистрации -->
+            <!-- Форма регистрации (скрыта по умолчанию) -->
             <div id="register-form" class="auth-form-container hidden">
                 <form class="auth-form" id="register-form-element">
                     <div id="register-error" class="auth-error hidden"></div>
@@ -58,10 +58,6 @@
                         <input type="password" id="register-password" required minlength="6">
                     </div>
                     <button type="submit" class="auth-btn">Зарегистрироваться</button>
-                    <div class="guest-divider">
-                        <span>или</span>
-                    </div>
-                    <button type="button" class="auth-btn guest" id="register-as-guest">Войти как гость</button>
                     <div class="auth-link">
                         Уже есть аккаунт? <a href="#" id="show-login">Войти</a>
                     </div>
@@ -369,14 +365,28 @@
                 const email = document.getElementById('login-email').value;
                 const password = document.getElementById('login-password').value;
                 
-                const result = await authManager.login(email, password);
-                if (result.success) {
-                    document.getElementById('auth-screen').classList.add('hidden');
-                    document.getElementById('main-menu').classList.remove('hidden');
-                    document.getElementById('user-name').textContent = result.user.username || result.user.email;
-                } else {
+                // Скрываем предыдущие ошибки
+                document.getElementById('login-error').classList.add('hidden');
+                
+                try {
+                    const result = await authManager.login(email, password);
+                    if (result.success) {
+                        // Скрываем экран входа и показываем меню
+                        document.getElementById('auth-screen').classList.add('hidden');
+                        document.getElementById('main-menu').classList.remove('hidden');
+                        const displayName = result.user.username || result.user.email;
+                        document.getElementById('user-name').textContent = displayName;
+                        console.log('Вход успешен:', result.user);
+                    } else {
+                        const errorEl = document.getElementById('login-error');
+                        errorEl.textContent = result.error || 'Ошибка входа';
+                        errorEl.classList.remove('hidden');
+                        console.error('Ошибка входа:', result.error);
+                    }
+                } catch (error) {
+                    console.error('Исключение при входе:', error);
                     const errorEl = document.getElementById('login-error');
-                    errorEl.textContent = result.error;
+                    errorEl.textContent = 'Ошибка входа: ' + (error.message || 'Неизвестная ошибка');
                     errorEl.classList.remove('hidden');
                 }
             });
@@ -387,44 +397,59 @@
                 const email = document.getElementById('register-email').value;
                 const password = document.getElementById('register-password').value;
                 
-                const result = await authManager.register(username, email, password);
-                if (result.success) {
-                    document.getElementById('register-success').textContent = 'Регистрация успешна! Проверьте email для подтверждения.';
-                    document.getElementById('register-success').classList.remove('hidden');
-                    setTimeout(() => {
-                        document.getElementById('show-login').click();
-                    }, 2000);
-                } else {
+                // Скрываем предыдущие ошибки и сообщения
+                document.getElementById('register-error').classList.add('hidden');
+                document.getElementById('register-success').classList.add('hidden');
+                
+                try {
+                    const result = await authManager.register(username, email, password);
+                    if (result.success) {
+                        document.getElementById('register-success').textContent = 'Регистрация успешна! Вы автоматически вошли в систему.';
+                        document.getElementById('register-success').classList.remove('hidden');
+                        // Переходим в меню через 1 секунду
+                        setTimeout(() => {
+                            document.getElementById('auth-screen').classList.add('hidden');
+                            document.getElementById('main-menu').classList.remove('hidden');
+                            const displayName = result.user.username || result.user.email;
+                            document.getElementById('user-name').textContent = displayName;
+                        }, 1000);
+                    } else {
+                        const errorEl = document.getElementById('register-error');
+                        errorEl.textContent = result.error || 'Ошибка регистрации';
+                        errorEl.classList.remove('hidden');
+                        console.error('Ошибка регистрации:', result.error);
+                    }
+                } catch (error) {
+                    console.error('Исключение при регистрации:', error);
                     const errorEl = document.getElementById('register-error');
-                    errorEl.textContent = result.error;
+                    errorEl.textContent = 'Ошибка регистрации: ' + (error.message || 'Неизвестная ошибка');
                     errorEl.classList.remove('hidden');
                 }
             });
             
             // Обработчик входа как гость (из формы входа)
-            document.getElementById('login-as-guest').addEventListener('click', async () => {
-                const result = await authManager.loginAsGuest();
-                if (result.success) {
-                    document.getElementById('auth-screen').classList.add('hidden');
-                    document.getElementById('main-menu').classList.remove('hidden');
-                    document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
-                } else {
+            document.getElementById('login-as-guest').addEventListener('click', async (e) => {
+                e.preventDefault();
+                try {
+                    const result = await authManager.loginAsGuest();
+                    if (result.success) {
+                        // Скрываем ошибки если были
+                        document.getElementById('login-error').classList.add('hidden');
+                        // Переходим в главное меню
+                        document.getElementById('auth-screen').classList.add('hidden');
+                        document.getElementById('main-menu').classList.remove('hidden');
+                        document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
+                        console.log('Вход как гость успешен:', result.user);
+                    } else {
+                        const errorEl = document.getElementById('login-error');
+                        errorEl.textContent = result.error || 'Ошибка входа как гость';
+                        errorEl.classList.remove('hidden');
+                        console.error('Ошибка входа как гость:', result.error);
+                    }
+                } catch (error) {
+                    console.error('Исключение при входе как гость:', error);
                     const errorEl = document.getElementById('login-error');
-                    errorEl.textContent = result.error || 'Ошибка входа как гость';
-                    errorEl.classList.remove('hidden');
-                }
-            });
-            
-            // Обработчик входа как гость (из формы регистрации)
-            document.getElementById('register-as-guest').addEventListener('click', async () => {
-                const result = await authManager.loginAsGuest();
-                if (result.success) {
-                    document.getElementById('auth-screen').classList.add('hidden');
-                    document.getElementById('main-menu').classList.remove('hidden');
-                    document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
-                } else {
-                    const errorEl = document.getElementById('register-error');
-                    errorEl.textContent = result.error || 'Ошибка входа как гость';
+                    errorEl.textContent = 'Ошибка входа как гость: ' + error.message;
                     errorEl.classList.remove('hidden');
                 }
             });
@@ -447,6 +472,11 @@
             // Переключение между формами
             document.getElementById('show-register').addEventListener('click', (e) => {
                 e.preventDefault();
+                // Скрываем ошибки при переключении
+                document.getElementById('login-error').classList.add('hidden');
+                document.getElementById('register-error').classList.add('hidden');
+                document.getElementById('register-success').classList.add('hidden');
+                // Переключаем формы
                 document.getElementById('login-form').classList.add('hidden');
                 document.getElementById('register-form').classList.remove('hidden');
                 document.getElementById('forgot-password-form').classList.add('hidden');
@@ -454,6 +484,11 @@
             
             document.getElementById('show-login').addEventListener('click', (e) => {
                 e.preventDefault();
+                // Скрываем ошибки при переключении
+                document.getElementById('register-error').classList.add('hidden');
+                document.getElementById('register-success').classList.add('hidden');
+                document.getElementById('login-error').classList.add('hidden');
+                // Переключаем формы
                 document.getElementById('register-form').classList.add('hidden');
                 document.getElementById('login-form').classList.remove('hidden');
                 document.getElementById('forgot-password-form').classList.add('hidden');
@@ -461,14 +496,25 @@
             
             document.getElementById('show-forgot-password').addEventListener('click', (e) => {
                 e.preventDefault();
+                // Скрываем ошибки при переключении
+                document.getElementById('login-error').classList.add('hidden');
+                document.getElementById('forgot-error').classList.add('hidden');
+                document.getElementById('forgot-success').classList.add('hidden');
+                // Переключаем формы
                 document.getElementById('login-form').classList.add('hidden');
                 document.getElementById('forgot-password-form').classList.remove('hidden');
+                document.getElementById('register-form').classList.add('hidden');
             });
             
             document.getElementById('back-to-login').addEventListener('click', (e) => {
                 e.preventDefault();
+                // Скрываем ошибки при переключении
+                document.getElementById('forgot-error').classList.add('hidden');
+                document.getElementById('forgot-success').classList.add('hidden');
+                // Переключаем формы
                 document.getElementById('forgot-password-form').classList.add('hidden');
                 document.getElementById('login-form').classList.remove('hidden');
+                document.getElementById('register-form').classList.add('hidden');
             });
             
             // Выход
