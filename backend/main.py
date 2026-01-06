@@ -132,6 +132,20 @@ async def test_api():
     """Тестовый endpoint для проверки работы API."""
     return {"status": "ok", "message": "API работает"}
 
+# Подключаем rate limiting
+try:
+    from slowapi import Limiter, _rate_limit_exceeded_handler
+    from slowapi.util import get_remote_address
+    from slowapi.errors import RateLimitExceeded
+    from middleware.rate_limit import get_rate_limiter
+    
+    limiter = get_rate_limiter()
+    app.state.limiter = limiter
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    logger.info("Rate limiting подключен")
+except ImportError as e:
+    logger.warning(f"Не удалось подключить rate limiting: {e}")
+
 # Подключаем auth routes
 try:
     from routes.auth import router as auth_router
