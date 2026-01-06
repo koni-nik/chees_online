@@ -704,6 +704,10 @@ async def matchmaking_endpoint(websocket: WebSocket, player_id: str):
 
 @app.websocket("/ws/{room_id}/{player_id}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str):
+    """
+    WebSocket endpoint для игровых комнат.
+    Поддерживает опциональную аутентификацию через query параметр token.
+    """
     # Валидация параметров
     try:
         room_id = validate_room_id(room_id)
@@ -711,6 +715,40 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str)
     except ValueError as e:
         await websocket.close(code=4000, reason=str(e))
         return
+    
+    # Получаем токен из query параметров URL
+    token = None
+    try:
+        # FastAPI WebSocket поддерживает query параметры через websocket.url.query
+        if hasattr(websocket, 'url') and websocket.url.query:
+            from urllib.parse import parse_qs
+            params = parse_qs(str(websocket.url.query))
+            if "token" in params and params["token"]:
+                token = params["token"][0]
+    except Exception as e:
+        logger.debug(f"Ошибка получения query параметров: {e}")
+    
+    # Опциональная проверка токена (для v2.8+)
+    user_id = None
+    if token:
+        try:
+            from auth import auth_manager
+            user = await auth_manager.get_user_from_token(token)
+            if user:
+                user_id = user["id"]
+                # Проверяем связь player_id с user_id
+                async with db._get_connection() as conn:
+                    cursor = await conn.execute(
+                        "SELECT user_id FROM players WHERE player_id = ?",
+                        (player_id,)
+                    )
+                    row = await cursor.fetchone()
+                    if row and row[0] != user_id:
+                        # player_id не принадлежит этому пользователю
+                        logger.warning(f"Попытка подключения с несоответствующим player_id: user_id={user_id}, player_id={player_id}")
+        except Exception as e:
+            logger.warning(f"Ошибка проверки токена в WebSocket: {e}")
+            # Не блокируем подключение, но логируем
     
     await connection_manager.connect(websocket, room_id, player_id)
     
