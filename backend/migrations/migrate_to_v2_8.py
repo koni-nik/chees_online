@@ -55,20 +55,13 @@ async def migrate_existing_players():
                     # Пользователь уже существует, просто связываем
                     user_id = existing_user["id"]
                 else:
-                    # Создаём нового guest пользователя (is_guest передаётся как параметр, но его нет в текущей схеме)
-                    # Пока просто создаём обычного пользователя, guest помечается через username/email
+                    # Создаём нового guest пользователя
                     password_hash = auth_manager.hash_password(password)
-                    user_id = await db.create_user(username, email, password_hash)
+                    user_id = await db.create_user(username, email, password_hash, is_guest=True)
                     logger.debug(f"Создан guest пользователь для player_id {player_id}: user_id={user_id}")
                 
-                # Связываем player_id с user_id (обновляем таблицу players)
-                import aiosqlite
-                async with aiosqlite.connect(db.db_path) as conn:
-                    await conn.execute(
-                        "UPDATE players SET user_id = ? WHERE player_id = ?",
-                        (user_id, player_id)
-                    )
-                    await conn.commit()
+                # Связываем player_id с user_id
+                await db.link_player_to_user(player_id, user_id)
                 
                 migrated_count += 1
                 
