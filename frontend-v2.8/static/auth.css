@@ -22,13 +22,14 @@
     top: 0;
     left: 0;
     width: 100%;
-    height: 100%;
+    height: 100vh;
     display: flex;
     justify-content: center;
     align-items: flex-start;
     padding: 2rem 1rem;
     overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
     background: 
         radial-gradient(ellipse at 20% 80%, rgba(0, 255, 247, 0.05) 0%, transparent 50%),
         radial-gradient(ellipse at 80% 20%, rgba(255, 0, 255, 0.05) 0%, transparent 50%),
@@ -66,12 +67,10 @@
     box-shadow: var(--glow-cyan), 0 8px 32px rgba(0, 0, 0, 0.5);
     width: 100%;
     max-width: 450px;
-    max-height: calc(100vh - 4rem);
     margin: 2rem auto;
     backdrop-filter: blur(10px);
     animation: containerFloat 3s ease-in-out infinite;
-    overflow-y: auto;
-    overflow-x: hidden;
+    /* Убираем overflow из контейнера, скролл будет на auth-screen */
 }
 
 @keyframes containerFloat {
@@ -296,23 +295,23 @@
     padding: 0 1rem;
 }
 
-/* Улучшенный скролл для контейнера */
-.auth-container::-webkit-scrollbar {
-    width: 8px;
+/* Улучшенный скролл для экрана аутентификации */
+.auth-screen::-webkit-scrollbar {
+    width: 10px;
 }
 
-.auth-container::-webkit-scrollbar-track {
-    background: rgba(10, 10, 15, 0.5);
-    border-radius: 4px;
+.auth-screen::-webkit-scrollbar-track {
+    background: rgba(10, 10, 15, 0.3);
+    border-radius: 5px;
 }
 
-.auth-container::-webkit-scrollbar-thumb {
-    background: rgba(0, 255, 247, 0.3);
-    border-radius: 4px;
+.auth-screen::-webkit-scrollbar-thumb {
+    background: rgba(0, 255, 247, 0.4);
+    border-radius: 5px;
 }
 
-.auth-container::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 255, 247, 0.5);
+.auth-screen::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 255, 247, 0.6);
 }
 
 /* Адаптивность */

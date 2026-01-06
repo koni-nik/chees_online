@@ -340,8 +340,19 @@
         document.addEventListener('DOMContentLoaded', async () => {
             // Проверяем, авторизован ли пользователь
             if (!authManager.isAuthenticated() && !authManager.isGuest()) {
-                document.getElementById('auth-screen').classList.remove('hidden');
-                document.getElementById('main-menu').classList.add('hidden');
+                // Показываем экран входа (форма входа видна по умолчанию)
+                const authScreen = document.getElementById('auth-screen');
+                const mainMenu = document.getElementById('main-menu');
+                const loginForm = document.getElementById('login-form');
+                const registerForm = document.getElementById('register-form');
+                const forgotForm = document.getElementById('forgot-password-form');
+                
+                authScreen.classList.remove('hidden');
+                mainMenu.classList.add('hidden');
+                // Убеждаемся, что форма входа видна, а регистрация скрыта
+                loginForm.classList.remove('hidden');
+                registerForm.classList.add('hidden');
+                forgotForm.classList.add('hidden');
             } else {
                 // Показываем главное меню
                 document.getElementById('auth-screen').classList.add('hidden');
@@ -433,8 +444,18 @@
                 try {
                     const result = await authManager.loginAsGuest();
                     if (result.success) {
-                        // Скрываем ошибки если были
+                        // Скрываем все формы и ошибки
                         document.getElementById('login-error').classList.add('hidden');
+                        document.getElementById('register-error').classList.add('hidden');
+                        document.getElementById('register-success').classList.add('hidden');
+                        document.getElementById('forgot-error').classList.add('hidden');
+                        document.getElementById('forgot-success').classList.add('hidden');
+                        
+                        // Скрываем все формы аутентификации
+                        document.getElementById('login-form').classList.add('hidden');
+                        document.getElementById('register-form').classList.add('hidden');
+                        document.getElementById('forgot-password-form').classList.add('hidden');
+                        
                         // Переходим в главное меню
                         document.getElementById('auth-screen').classList.add('hidden');
                         document.getElementById('main-menu').classList.remove('hidden');
