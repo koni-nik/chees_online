@@ -154,6 +154,14 @@ try:
 except ImportError as e:
     logger.warning(f"Не удалось подключить auth routes: {e}")
 
+# Подключаем stats routes
+try:
+    from routes.stats import router as stats_router
+    app.include_router(stats_router, prefix="/api", tags=["stats"])
+    logger.info("Stats routes подключены")
+except ImportError as e:
+    logger.warning(f"Не удалось подключить stats routes: {e}")
+
 # ВАЖНО: Endpoints для турнирных комнат определены ниже, после определения
 # tournament_rooms и manager. Они будут зарегистрированы при загрузке модуля.
 # Порядок определения функций не влияет на порядок регистрации маршрутов в FastAPI,
