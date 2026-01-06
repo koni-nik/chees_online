@@ -15,7 +15,10 @@ if (typeof authManager === 'undefined') {
         script.src = '/v2.7/game.js';
         script.onload = () => {
             console.log('Game.js v2.7 загружен, обновляем для v2.8...');
-            initV28Updates();
+            // Даем время на инициализацию game.js v2.7
+            setTimeout(() => {
+                initV28Updates();
+            }, 200);
         };
         script.onerror = () => {
             console.error('Не удалось загрузить game.js v2.7, используем базовую версию');
@@ -29,21 +32,38 @@ if (typeof authManager === 'undefined') {
 })();
 
 function initV28Updates() {
-    // Обновляем playerId для использования из authManager
-    if (window.game && typeof authManager !== 'undefined') {
+    // Ждем, пока game.js v2.7 полностью загрузится и инициализируется
+    setTimeout(() => {
+        if (!window.game) {
+            console.warn('window.game не найден, повторная попытка...');
+            setTimeout(initV28Updates, 100);
+            return;
+        }
+        
+        console.log('Применяем обновления v2.8 к game.js...');
+        
+        // Обновляем playerId для использования из authManager
+        if (typeof authManager !== 'undefined' && authManager.currentUser && authManager.currentUser.player_id) {
+            window.game.playerId = authManager.currentUser.player_id;
+            console.log('PlayerId обновлен из authManager:', window.game.playerId);
+        }
+        
         const originalGenerateId = window.game.generateId;
-        window.game.generateId = function() {
-            // Используем player_id из authManager если доступен
-            if (authManager.currentUser && authManager.currentUser.player_id) {
-                return authManager.currentUser.player_id;
-            }
-            // Иначе генерируем временный ID
-            return originalGenerateId ? originalGenerateId.call(this) : 'temp_' + Math.random().toString(36).substring(2, 15);
-        };
+        if (originalGenerateId) {
+            window.game.generateId = function() {
+                // Используем player_id из authManager если доступен
+                if (typeof authManager !== 'undefined' && authManager.currentUser && authManager.currentUser.player_id) {
+                    return authManager.currentUser.player_id;
+                }
+                // Иначе используем оригинальный метод
+                return originalGenerateId.call(this);
+            };
+        }
         
         // Обновляем connectWebSocket для передачи токена
         const originalConnectWebSocket = window.game.connectWebSocket;
-        window.game.connectWebSocket = function() {
+        if (originalConnectWebSocket) {
+            window.game.connectWebSocket = function() {
             if (this.ws) {
                 try {
                     this.ws.close();
@@ -146,13 +166,8 @@ function initV28Updates() {
             }
         };
         
-        // Обновляем playerId при инициализации
-        if (authManager.currentUser && authManager.currentUser.player_id) {
-            window.game.playerId = authManager.currentUser.player_id;
-        }
-        
         console.log('v2.8 updates applied to game.js');
-    }
+    }, 100);
 }
 
 function initBasicGame() {

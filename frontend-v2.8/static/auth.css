@@ -25,7 +25,10 @@
     height: 100%;
     display: flex;
     justify-content: center;
-    align-items: center;
+    align-items: flex-start;
+    padding: 2rem 1rem;
+    overflow-y: auto;
+    overflow-x: hidden;
     background: 
         radial-gradient(ellipse at 20% 80%, rgba(0, 255, 247, 0.05) 0%, transparent 50%),
         radial-gradient(ellipse at 80% 20%, rgba(255, 0, 255, 0.05) 0%, transparent 50%),
@@ -63,8 +66,12 @@
     box-shadow: var(--glow-cyan), 0 8px 32px rgba(0, 0, 0, 0.5);
     width: 100%;
     max-width: 450px;
+    max-height: calc(100vh - 4rem);
+    margin: 2rem auto;
     backdrop-filter: blur(10px);
     animation: containerFloat 3s ease-in-out infinite;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 @keyframes containerFloat {
@@ -289,11 +296,35 @@
     padding: 0 1rem;
 }
 
+/* Улучшенный скролл для контейнера */
+.auth-container::-webkit-scrollbar {
+    width: 8px;
+}
+
+.auth-container::-webkit-scrollbar-track {
+    background: rgba(10, 10, 15, 0.5);
+    border-radius: 4px;
+}
+
+.auth-container::-webkit-scrollbar-thumb {
+    background: rgba(0, 255, 247, 0.3);
+    border-radius: 4px;
+}
+
+.auth-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 255, 247, 0.5);
+}
+
 /* Адаптивность */
 @media (max-width: 600px) {
+    .auth-screen {
+        padding: 1rem 0.5rem;
+    }
+    
     .auth-container {
         padding: 2rem 1.5rem;
-        margin: 1rem;
+        margin: 1rem auto;
+        max-height: calc(100vh - 2rem);
     }
     
     .auth-title {

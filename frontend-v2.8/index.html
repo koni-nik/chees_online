@@ -440,6 +440,28 @@
                         document.getElementById('main-menu').classList.remove('hidden');
                         document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
                         console.log('Вход как гость успешен:', result.user);
+                        
+                        // Обновляем playerId в game.js если он уже загружен
+                        // Проверяем несколько раз, так как game.js может загружаться асинхронно
+                        const updatePlayerId = () => {
+                            if (window.game && result.user.player_id) {
+                                window.game.playerId = result.user.player_id;
+                                console.log('PlayerId обновлен в game.js:', window.game.playerId);
+                                return true;
+                            }
+                            return false;
+                        };
+                        
+                        if (!updatePlayerId()) {
+                            // Если game.js еще не загружен, ждем
+                            let attempts = 0;
+                            const checkInterval = setInterval(() => {
+                                attempts++;
+                                if (updatePlayerId() || attempts > 20) {
+                                    clearInterval(checkInterval);
+                                }
+                            }, 100);
+                        }
                     } else {
                         const errorEl = document.getElementById('login-error');
                         errorEl.textContent = result.error || 'Ошибка входа как гость';
@@ -581,7 +603,13 @@
         // Функция загрузки статистики
         async function loadStats() {
             try {
-                if (!authManager.isAuthenticated() && !authManager.isGuest()) {
+                // Для гостей показываем нулевую статистику (у них нет токена для API)
+                if (authManager.isGuest()) {
+                    updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
+                    return;
+                }
+                
+                if (!authManager.isAuthenticated()) {
                     // Если не авторизован, показываем нулевую статистику
                     updateStatsDisplay({ total: 0, white_wins: 0, black_wins: 0, draws: 0, rating: 1200, rank: 'Новичок' });
                     return;
