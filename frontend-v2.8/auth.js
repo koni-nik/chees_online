@@ -20,6 +20,11 @@ class AuthManager {
             // Если нет токена, пытаемся восстановить гостевой режим
             this.restoreGuest();
         }
+        
+        // Сохраняем ссылку на authManager в window для отладки
+        if (typeof window !== 'undefined') {
+            window.authManager = this;
+        }
     }
     
     /**
@@ -27,6 +32,7 @@ class AuthManager {
      */
     async register(username, email, password) {
         try {
+            console.log('Попытка регистрации:', username, email);
             const response = await fetch(`${this.baseURL}/api/auth/register`, {
                 method: 'POST',
                 headers: {
@@ -38,7 +44,9 @@ class AuthManager {
             const data = await response.json();
             
             if (!response.ok) {
-                throw new Error(data.detail || 'Ошибка регистрации');
+                const errorMsg = data.detail || data.error || 'Ошибка регистрации';
+                console.error('Ошибка регистрации:', errorMsg);
+                throw new Error(errorMsg);
             }
             
             // Сохраняем токены
@@ -50,9 +58,11 @@ class AuthManager {
             // Получаем данные пользователя
             await this.getCurrentUser();
             
+            console.log('Регистрация успешна, пользователь:', this.currentUser);
             return { success: true, user: this.currentUser };
         } catch (error) {
-            return { success: false, error: error.message };
+            console.error('Ошибка при регистрации:', error);
+            return { success: false, error: error.message || 'Ошибка регистрации' };
         }
     }
     
@@ -261,13 +271,16 @@ class AuthManager {
      */
     async loginAsGuest() {
         try {
+            console.log('Начало входа как гость...');
+            
             // Генерируем случайный ID для гостя
             const guestId = 'guest_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            const shortId = guestId.substring(6, 12);
             
             // Создаем временного пользователя-гостя
             this.currentUser = {
                 player_id: guestId,
-                username: `Гость_${guestId.substring(6, 12)}`,
+                username: `Гость_${shortId}`,
                 email: `${guestId}@guest.local`,
                 is_guest: true
             };
@@ -282,9 +295,11 @@ class AuthManager {
             localStorage.removeItem('access_token');
             localStorage.removeItem('refresh_token');
             
+            console.log('Вход как гость успешен:', this.currentUser);
             return { success: true, user: this.currentUser };
         } catch (error) {
-            return { success: false, error: error.message };
+            console.error('Ошибка входа как гость:', error);
+            return { success: false, error: error.message || 'Неизвестная ошибка' };
         }
     }
     
