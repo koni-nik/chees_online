@@ -47,15 +47,15 @@
                     <div id="register-success" class="auth-success hidden"></div>
                     <div class="form-group">
                         <label for="register-username">Имя пользователя:</label>
-                        <input type="text" id="register-username" required minlength="3" maxlength="50">
+                        <input type="text" id="register-username" required minlength="3" maxlength="50" placeholder="От 3 до 50 символов">
                     </div>
                     <div class="form-group">
                         <label for="register-email">Email:</label>
-                        <input type="email" id="register-email" required>
+                        <input type="email" id="register-email" required placeholder="example@email.com">
                     </div>
                     <div class="form-group">
                         <label for="register-password">Пароль:</label>
-                        <input type="password" id="register-password" required minlength="6">
+                        <input type="password" id="register-password" required minlength="6" placeholder="Минимум 6 символов">
                     </div>
                     <button type="submit" class="auth-btn">Зарегистрироваться</button>
                     <div class="auth-link">
@@ -336,6 +336,15 @@
     <script src="/v2.8/auth.js"></script>
     <script src="/v2.8/game.js"></script>
     <script>
+        // Вспомогательная функция для безопасного получения элемента
+        function getElementSafely(id, description) {
+            const element = document.getElementById(id);
+            if (!element) {
+                console.error(`Элемент не найден: ${id} (${description})`);
+            }
+            return element;
+        }
+        
         // Инициализация аутентификации
         document.addEventListener('DOMContentLoaded', async () => {
             // Проверяем, авторизован ли пользователь
@@ -439,63 +448,84 @@
             });
             
             // Обработчик входа как гость (из формы входа)
-            document.getElementById('login-as-guest').addEventListener('click', async (e) => {
-                e.preventDefault();
-                try {
-                    const result = await authManager.loginAsGuest();
-                    if (result.success) {
-                        // Скрываем все формы и ошибки
-                        document.getElementById('login-error').classList.add('hidden');
-                        document.getElementById('register-error').classList.add('hidden');
-                        document.getElementById('register-success').classList.add('hidden');
-                        document.getElementById('forgot-error').classList.add('hidden');
-                        document.getElementById('forgot-success').classList.add('hidden');
-                        
-                        // Скрываем все формы аутентификации
-                        document.getElementById('login-form').classList.add('hidden');
-                        document.getElementById('register-form').classList.add('hidden');
-                        document.getElementById('forgot-password-form').classList.add('hidden');
-                        
-                        // Переходим в главное меню
-                        document.getElementById('auth-screen').classList.add('hidden');
-                        document.getElementById('main-menu').classList.remove('hidden');
-                        document.getElementById('user-name').textContent = result.user.username + ' (Гость)';
-                        console.log('Вход как гость успешен:', result.user);
-                        
-                        // Обновляем playerId в game.js если он уже загружен
-                        // Проверяем несколько раз, так как game.js может загружаться асинхронно
-                        const updatePlayerId = () => {
-                            if (window.game && result.user.player_id) {
-                                window.game.playerId = result.user.player_id;
-                                console.log('PlayerId обновлен в game.js:', window.game.playerId);
-                                return true;
+            const loginAsGuestBtn = getElementSafely('login-as-guest', 'Кнопка входа как гость');
+            if (loginAsGuestBtn) {
+                loginAsGuestBtn.addEventListener('click', async (e) => {
+                    e.preventDefault();
+                    try {
+                        const result = await authManager.loginAsGuest();
+                        if (result.success) {
+                            // Скрываем все формы и ошибки
+                            const loginErrorEl = getElementSafely('login-error', 'Сообщение об ошибке входа');
+                            const registerErrorEl = getElementSafely('register-error', 'Сообщение об ошибке регистрации');
+                            const registerSuccessEl = getElementSafely('register-success', 'Сообщение об успехе регистрации');
+                            const forgotErrorEl = getElementSafely('forgot-error', 'Сообщение об ошибке восстановления');
+                            const forgotSuccessEl = getElementSafely('forgot-success', 'Сообщение об успехе восстановления');
+                            
+                            if (loginErrorEl) loginErrorEl.classList.add('hidden');
+                            if (registerErrorEl) registerErrorEl.classList.add('hidden');
+                            if (registerSuccessEl) registerSuccessEl.classList.add('hidden');
+                            if (forgotErrorEl) forgotErrorEl.classList.add('hidden');
+                            if (forgotSuccessEl) forgotSuccessEl.classList.add('hidden');
+                            
+                            // Скрываем все формы аутентификации
+                            const loginForm = getElementSafely('login-form', 'Форма входа');
+                            const registerForm = getElementSafely('register-form', 'Форма регистрации');
+                            const forgotForm = getElementSafely('forgot-password-form', 'Форма восстановления');
+                            if (loginForm) loginForm.classList.add('hidden');
+                            if (registerForm) registerForm.classList.add('hidden');
+                            if (forgotForm) forgotForm.classList.add('hidden');
+                            
+                            // Переходим в главное меню
+                            const authScreen = getElementSafely('auth-screen', 'Экран аутентификации');
+                            const mainMenu = getElementSafely('main-menu', 'Главное меню');
+                            const userNameEl = getElementSafely('user-name', 'Имя пользователя');
+                            if (authScreen) authScreen.classList.add('hidden');
+                            if (mainMenu) mainMenu.classList.remove('hidden');
+                            if (userNameEl) {
+                                userNameEl.textContent = result.user.username + ' (Гость)';
                             }
-                            return false;
-                        };
-                        
-                        if (!updatePlayerId()) {
-                            // Если game.js еще не загружен, ждем
-                            let attempts = 0;
-                            const checkInterval = setInterval(() => {
-                                attempts++;
-                                if (updatePlayerId() || attempts > 20) {
-                                    clearInterval(checkInterval);
+                            console.log('Вход как гость успешен:', result.user);
+                            
+                            // Обновляем playerId в game.js если он уже загружен
+                            // Проверяем несколько раз, так как game.js может загружаться асинхронно
+                            const updatePlayerId = () => {
+                                if (window.game && result.user.player_id) {
+                                    window.game.playerId = result.user.player_id;
+                                    console.log('PlayerId обновлен в game.js:', window.game.playerId);
+                                    return true;
                                 }
-                            }, 100);
+                                return false;
+                            };
+                            
+                            if (!updatePlayerId()) {
+                                // Если game.js еще не загружен, ждем
+                                let attempts = 0;
+                                const checkInterval = setInterval(() => {
+                                    attempts++;
+                                    if (updatePlayerId() || attempts > 20) {
+                                        clearInterval(checkInterval);
+                                    }
+                                }, 100);
+                            }
+                        } else {
+                            const errorEl = getElementSafely('login-error', 'Сообщение об ошибке входа');
+                            if (errorEl) {
+                                errorEl.textContent = result.error || 'Ошибка входа как гость';
+                                errorEl.classList.remove('hidden');
+                            }
+                            console.error('Ошибка входа как гость:', result.error);
                         }
-                    } else {
-                        const errorEl = document.getElementById('login-error');
-                        errorEl.textContent = result.error || 'Ошибка входа как гость';
-                        errorEl.classList.remove('hidden');
-                        console.error('Ошибка входа как гость:', result.error);
+                    } catch (error) {
+                        console.error('Исключение при входе как гость:', error);
+                        const errorEl = getElementSafely('login-error', 'Сообщение об ошибке входа');
+                        if (errorEl) {
+                            errorEl.textContent = 'Ошибка входа как гость: ' + error.message;
+                            errorEl.classList.remove('hidden');
+                        }
                     }
-                } catch (error) {
-                    console.error('Исключение при входе как гость:', error);
-                    const errorEl = document.getElementById('login-error');
-                    errorEl.textContent = 'Ошибка входа как гость: ' + error.message;
-                    errorEl.classList.remove('hidden');
-                }
-            });
+                });
+            }
             
             document.getElementById('forgot-password-form-element').addEventListener('submit', async (e) => {
                 e.preventDefault();

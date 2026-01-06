@@ -4,6 +4,7 @@ Auth routes для версии 2.8.
 """
 from fastapi import APIRouter, HTTPException, Depends, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.requests import Request as StarletteRequest  # Для slowapi
 from pydantic import BaseModel, EmailStr, validator
 from typing import Optional
 from datetime import datetime, timedelta
@@ -72,7 +73,7 @@ class ResetPasswordRequest(BaseModel):
 
 @router.post("/register", response_model=TokenResponse)
 @limiter.limit("5/minute")
-async def register(request: RegisterRequest, req: Request):
+async def register(request: RegisterRequest, req: StarletteRequest = None):
     """
     Регистрация нового пользователя.
     """
@@ -119,7 +120,7 @@ async def register(request: RegisterRequest, req: Request):
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("10/minute")
-async def login(request: LoginRequest, req: Request):
+async def login(request: LoginRequest, req: StarletteRequest = None):
     """
     Вход в систему.
     """
@@ -271,7 +272,7 @@ async def verify_email(token: str):
 
 @router.post("/forgot-password")
 @limiter.limit("3/hour")
-async def forgot_password(request: ForgotPasswordRequest, req: Request):
+async def forgot_password(request: ForgotPasswordRequest, req: StarletteRequest = None):
     """Запрос сброса пароля."""
     try:
         # Получаем пользователя
@@ -298,7 +299,7 @@ async def forgot_password(request: ForgotPasswordRequest, req: Request):
 
 @router.post("/reset-password")
 @limiter.limit("5/hour")
-async def reset_password(request: ResetPasswordRequest, req: Request):
+async def reset_password(request: ResetPasswordRequest, req: StarletteRequest = None):
     """Сброс пароля по токену."""
     try:
         # Получаем токен из БД

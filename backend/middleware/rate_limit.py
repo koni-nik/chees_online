@@ -4,7 +4,7 @@ Rate limiting middleware для защиты от злоупотреблений
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-from fastapi import Request
+from starlette.requests import Request  # Используем starlette.requests.Request для slowapi
 from logger import setup_logger
 from config import config
 
